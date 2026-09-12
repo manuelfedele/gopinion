@@ -80,6 +80,7 @@ GOpinion creates the same envelope for framework failures:
 | Status | Code | Cause |
 | --- | --- | --- |
 | 400 | `invalid_json` | Malformed JSON, unknown struct fields, or multiple values |
+| 400 | `invalid_query` | Malformed query-string encoding |
 | 400 | `invalid_page` | Invalid page number or offset |
 | 400 | `invalid_page_size` | Invalid page size |
 | 400 | `page_size_too_large` | Page size exceeds policy |

@@ -85,7 +85,8 @@ authentcation:
 ```
 
 ```text
-decode configuration: field authentcation not found
+decode configuration: yaml: unmarshal errors:
+  line 2: field authentcation not found in type gopinion.config
 ```
 
 Unsupported policy:
@@ -97,5 +98,5 @@ authentication:
 ```
 
 ```text
-validate configuration: authentication.mode must be "required" or "disabled"
+validate configuration: authentication.mode must be "required" or "disabled", got "optional"
 ```

@@ -30,6 +30,8 @@ return app.Run(ctx)
 ```
 
 `Run` may be called once. Route registration closes as soon as it starts.
+It serves HTTP, so production deployments must terminate TLS at a trusted load
+balancer, ingress, gateway, or service mesh before forwarding requests.
 
 ## Connect shutdown to signals
 

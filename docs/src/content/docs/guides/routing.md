@@ -95,3 +95,5 @@ Do not include an HTTP method in the pattern. The route constructor owns it.
 
 Unknown paths use the fixed JSON `404` envelope. Method mismatches use the
 fixed JSON `405` envelope and include an `Allow` header.
+Paths that `http.ServeMux` would redirect for cleaning or a missing trailing
+slash are returned as JSON `404` responses instead.

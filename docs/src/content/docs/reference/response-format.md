@@ -66,6 +66,9 @@ A method mismatch also sets an `Allow` header:
 Allow: GET, HEAD
 ```
 
+An authentication failure sets `WWW-Authenticate`. The default challenge is
+`Bearer`; authenticators can provide another challenge.
+
 ## Statuses
 
 | Route or condition | Status |

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"log"
 	"net/http"
@@ -27,12 +28,13 @@ var todos = []todo{
 }
 
 type exampleAuthenticator struct {
-	token string
+	tokenHash [sha256.Size]byte
 }
 
 func (authenticator exampleAuthenticator) Authenticate(request *http.Request) (gopinion.Principal, error) {
 	presented, found := strings.CutPrefix(request.Header.Get("Authorization"), "Bearer ")
-	if !found || subtle.ConstantTimeCompare([]byte(presented), []byte(authenticator.token)) != 1 {
+	presentedHash := sha256.Sum256([]byte(presented))
+	if !found || subtle.ConstantTimeCompare(presentedHash[:], authenticator.tokenHash[:]) != 1 {
 		return gopinion.Principal{}, gopinion.ErrUnauthenticated
 	}
 	return gopinion.Principal{Subject: "example-user"}, nil
@@ -46,7 +48,7 @@ func main() {
 
 	app, err := gopinion.New(
 		"gopinion.yaml",
-		gopinion.WithAuthenticator(exampleAuthenticator{token: token}),
+		gopinion.WithAuthenticator(exampleAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
 	)
 	if err != nil {
 		log.Fatal(err)

@@ -36,10 +36,42 @@ func TestAuthenticationWrapsEveryRoute(t *testing.T) {
 	if response.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("security response header is missing")
 	}
+	if response.Header().Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("WWW-Authenticate = %q, want Bearer", response.Header().Get("WWW-Authenticate"))
+	}
 
 	unknown := performRequest(app, http.MethodGet, "/unknown", "", "")
 	if unknown.Code != http.StatusUnauthorized {
 		t.Fatalf("unknown route status = %d, want %d", unknown.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthenticatorFailureIsInternalError(t *testing.T) {
+	app, err := New(
+		writeTestConfig(t, "version: 1\n"),
+		WithAuthenticator(AuthenticatorFunc(func(*http.Request) (Principal, error) {
+			return Principal{}, errors.New("identity provider unavailable")
+		})),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/resource", "", "Bearer token")
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), `"code":"internal_error"`) {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthenticatorCanCustomizeChallenge(t *testing.T) {
+	app, err := New(writeTestConfig(t, "version: 1\n"), WithAuthenticator(challengingAuthenticator{}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/resource", "", "")
+	if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != `ApiKey realm="api"` {
+		t.Fatalf("response = %d, WWW-Authenticate = %q", response.Code, response.Header().Get("WWW-Authenticate"))
 	}
 }
 
@@ -96,6 +128,25 @@ func TestAuthenticatedNotFoundAndMethodNotAllowedUseErrorEnvelope(t *testing.T) 
 	}
 }
 
+func TestServeMuxRedirectsUseNotFoundEnvelope(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 1\n")
+	if err := app.Register(Get("/tree/", func(Context) (string, error) {
+		return "ok", nil
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	for _, target := range []string{"/tree", "/tree/../tree/"} {
+		response := performRequest(app, http.MethodGet, target, "", "Bearer valid")
+		if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+			t.Fatalf("response for %q = %d %q", target, response.Code, response.Body.String())
+		}
+		if response.Header().Get("Location") != "" {
+			t.Fatalf("Location for %q = %q", target, response.Header().Get("Location"))
+		}
+	}
+}
+
 func TestAuthenticationCanOnlyBeDisabledGlobally(t *testing.T) {
 	app, err := New(writeTestConfig(t, "version: 1\nauthentication:\n  mode: disabled\n"))
 	if err != nil {
@@ -147,6 +198,30 @@ func TestPaginationRejectsExcessivePageSize(t *testing.T) {
 	}
 	if called {
 		t.Fatal("handler was called with invalid pagination")
+	}
+}
+
+func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 1\n")
+	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
+		return NewPage([]string{}, 0, request)
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	tests := []struct {
+		target string
+		code   string
+	}{
+		{target: "/widgets?page=1;page_size=2", code: "invalid_query"},
+		{target: "/widgets?page=1&page=2", code: "invalid_page"},
+		{target: "/widgets?page_size=1&page_size=2", code: "invalid_page_size"},
+	}
+	for _, test := range tests {
+		response := performRequest(app, http.MethodGet, test.target, "", "Bearer valid")
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+			t.Fatalf("response for %q = %d %q", test.target, response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -282,6 +357,34 @@ func TestPostRejectsOversizedBody(t *testing.T) {
 	}
 }
 
+func TestPostRejectsOversizedTrailingData(t *testing.T) {
+	content := "version: 1\nserver:\n  max_body_bytes: 3\n"
+	app := newAuthenticatedTestApp(t, content)
+	if err := app.Register(Post("/widgets", func(_ Context, input map[string]string) (string, error) {
+		return input["name"], nil
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodPost, "/widgets", "{}  ", "Bearer valid")
+	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(response.Body.String(), "body_too_large") {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestRunRejectsNilContextBeforeStarting(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 1\n")
+	//lint:ignore SA1012 Verify the public API rejects an invalid context safely.
+	if err := app.Run(nil); err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("Run(nil) error = %v", err)
+	}
+	if err := app.Register(Get("/still-configurable", func(Context) (string, error) {
+		return "ok", nil
+	})); err != nil {
+		t.Fatalf("Register() after Run(nil) error = %v", err)
+	}
+}
+
 func newAuthenticatedTestApp(t *testing.T, configuration string) *App {
 	t.Helper()
 	authenticator := AuthenticatorFunc(func(request *http.Request) (Principal, error) {
@@ -305,4 +408,14 @@ func performRequest(app *App, method, target, body, authorization string) *httpt
 	response := httptest.NewRecorder()
 	app.serveHTTP(response, request)
 	return response
+}
+
+type challengingAuthenticator struct{}
+
+func (challengingAuthenticator) Authenticate(*http.Request) (Principal, error) {
+	return Principal{}, ErrUnauthenticated
+}
+
+func (challengingAuthenticator) AuthenticationChallenge() string {
+	return `ApiKey realm="api"`
 }

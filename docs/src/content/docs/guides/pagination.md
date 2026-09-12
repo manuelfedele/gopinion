@@ -85,6 +85,7 @@ func (r *OrderRepository) List(ctx context.Context, offset, limit int) ([]Order,
 - Negative totals
 - More items than the requested page size
 - More returned items than the declared total
+- Returned items that cannot exist at the requested offset
 
 ```go
 page, err := gopinion.NewPage(items, total, request)
@@ -118,6 +119,9 @@ An empty page still serializes `data` as an empty array, never `null`.
 | `page_size=0` | `400 invalid_page_size` |
 | Size above maximum | `400 page_size_too_large` |
 | Offset overflow | `400 invalid_page` |
+| Duplicate `page` | `400 invalid_page` |
+| Duplicate `page_size` | `400 invalid_page_size` |
+| Malformed query encoding | `400 invalid_query` |
 
 ## Why ordinary GET cannot return a slice
 

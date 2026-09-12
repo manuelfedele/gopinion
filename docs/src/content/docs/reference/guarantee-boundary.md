@@ -19,6 +19,10 @@ GOpinion guarantees its policies across the HTTP surface owned by `App.Run`.
 - Network timeouts and graceful shutdown are always configured.
 - Internal errors and panics use client-safe responses.
 
+GOpinion does not generate credentials, validate JWTs, provide authorization,
+or terminate TLS. These remain responsibilities of the injected authenticator,
+domain handlers, and deployment platform.
+
 ## Enforced by Go's type system
 
 - A list handler must return `Page[T]`.

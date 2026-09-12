@@ -19,6 +19,12 @@ type Authenticator interface {
 	Authenticate(*http.Request) (Principal, error)
 }
 
+// AuthenticationChallenger optionally provides the WWW-Authenticate value
+// returned when authentication fails. Bearer is used by default.
+type AuthenticationChallenger interface {
+	AuthenticationChallenge() string
+}
+
 // AuthenticatorFunc adapts a function to Authenticator.
 type AuthenticatorFunc func(*http.Request) (Principal, error)
 

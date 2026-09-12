@@ -45,6 +45,10 @@ func NewPage[T any](items []T, total int64, request PageRequest) (Page[T], error
 	if int64(len(items)) > total {
 		return Page[T]{}, fmt.Errorf("page contains %d items but total is %d", len(items), total)
 	}
+	offset := int64(request.Offset())
+	if len(items) > 0 && (offset >= total || int64(len(items)) > total-offset) {
+		return Page[T]{}, fmt.Errorf("page items exceed total at offset %d", offset)
+	}
 
 	copiedItems := make([]T, len(items))
 	copy(copiedItems, items)
@@ -73,7 +77,9 @@ func (page Page[T]) validate() error {
 	if page.request.Page <= 0 || page.request.Size <= 0 {
 		return errors.New("page was not created with gopinion.NewPage")
 	}
-	if page.total < 0 || len(page.items) > page.request.Size || int64(len(page.items)) > page.total {
+	offset := int64(page.request.Offset())
+	if page.total < 0 || len(page.items) > page.request.Size || int64(len(page.items)) > page.total ||
+		len(page.items) > 0 && (offset >= page.total || int64(len(page.items)) > page.total-offset) {
 		return errors.New("page is invalid")
 	}
 	return nil

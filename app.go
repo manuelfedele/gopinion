@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -134,6 +135,10 @@ func (app *App) Register(route Route) error {
 // Run serves the application until the context is cancelled or the server
 // fails. The framework owns graceful shutdown.
 func (app *App) Run(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("run context must not be nil")
+	}
+
 	app.mu.Lock()
 	if app.started {
 		app.mu.Unlock()
@@ -253,8 +258,14 @@ func (app *App) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	state := requestState{}
 	if app.config.Authentication.Mode == policyRequired {
 		principal, err := app.authenticator.Authenticate(request)
-		if err != nil || principal.Subject == "" {
+		if errors.Is(err, ErrUnauthenticated) || err == nil && principal.Subject == "" {
+			writer.Header().Set("WWW-Authenticate", app.authenticationChallenge())
 			writeError(writer, http.StatusUnauthorized, "unauthenticated", "Authentication is required.")
+			return
+		}
+		if err != nil {
+			app.logger.Error("authenticate request", "method", request.Method, "path", request.URL.Path, "error", err)
+			writeError(writer, http.StatusInternalServerError, "internal_error", "The server could not process the request.")
 			return
 		}
 		state.principal = principal
@@ -262,7 +273,7 @@ func (app *App) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	request = request.WithContext(context.WithValue(request.Context(), requestStateKey{}, state))
 	_, pattern := app.mux.Handler(request)
 	if pattern != "" {
-		app.mux.ServeHTTP(writer, request)
+		app.mux.ServeHTTP(&redirectRejectingResponseWriter{ResponseWriter: writer}, request)
 		return
 	}
 
@@ -273,6 +284,37 @@ func (app *App) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeError(writer, http.StatusNotFound, "not_found", "The requested resource does not exist.")
+}
+
+func (app *App) authenticationChallenge() string {
+	if challenger, ok := app.authenticator.(AuthenticationChallenger); ok {
+		if challenge := challenger.AuthenticationChallenge(); challenge != "" {
+			return challenge
+		}
+	}
+	return "Bearer"
+}
+
+type redirectRejectingResponseWriter struct {
+	http.ResponseWriter
+	rejected bool
+}
+
+func (writer *redirectRejectingResponseWriter) WriteHeader(status int) {
+	if status >= http.StatusMultipleChoices && status < http.StatusBadRequest {
+		writer.Header().Del("Location")
+		writer.rejected = true
+		writeError(writer.ResponseWriter, http.StatusNotFound, "not_found", "The requested resource does not exist.")
+		return
+	}
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *redirectRejectingResponseWriter) Write(payload []byte) (int, error) {
+	if writer.rejected {
+		return len(payload), nil
+	}
+	return writer.ResponseWriter.Write(payload)
 }
 
 func (app *App) allowedMethods(request *http.Request) []string {
@@ -332,7 +374,16 @@ func writeError(writer http.ResponseWriter, status int, code, message string) {
 }
 
 func pageRequestFromContext(context Context) (PageRequest, error) {
-	query := context.request.URL.Query()
+	query, err := url.ParseQuery(context.request.URL.RawQuery)
+	if err != nil {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_query", "The query string is not valid.")
+	}
+	if len(query["page"]) > 1 {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page", "The page parameter must be specified at most once.")
+	}
+	if len(query["page_size"]) > 1 {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page_size", "The page_size parameter must be specified at most once.")
+	}
 	page, err := parsePositiveInteger(query.Get("page"), 1)
 	if err != nil {
 		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page", "The page parameter must be a positive integer.")

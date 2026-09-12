@@ -75,6 +75,10 @@ func Post[I, O any](pattern string, handler func(Context, I) (O, error)) Route {
 
 			var extra any
 			if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+				var maximumBytesError *http.MaxBytesError
+				if errors.As(err, &maximumBytesError) {
+					return nil, NewHTTPError(http.StatusRequestEntityTooLarge, "body_too_large", "The request body is too large.")
+				}
 				return nil, NewHTTPError(http.StatusBadRequest, "invalid_json", "The request body must contain exactly one JSON value.")
 			}
 			return handler(context, input)
