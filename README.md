@@ -30,7 +30,7 @@ Read the complete documentation at
 `gopinion.yaml` is the single source of truth for application policy:
 
 ```yaml
-version: 2
+version: 3
 
 server:
   address: ":8080"
@@ -49,12 +49,14 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 25
-  maximum_size: 100
+  default_limit: 25
+  maximum_limit: 100
+  maximum_offset: 10000
 ```
 
 All fields except `version` can be omitted to use these defaults. Supported
-policy modes are `required` and `disabled`.
+policy modes are `required` and `disabled`. `gopinion.New` always loads
+`gopinion.yaml` from the process working directory.
 
 Authentication and authorization implementations are injected as code because
 identity-provider and policy-engine clients are runtime dependencies, not
@@ -68,7 +70,6 @@ and deployments must terminate TLS before requests reach the HTTP server.
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
     gopinion.WithAuthorizer(authorizer),
 )
@@ -82,7 +83,7 @@ err = app.Register(gopinion.AuthorizedList(
         return orderListAuthorization(ctx.Principal()), nil
     },
     func(ctx gopinion.Context, request gopinion.PageRequest, scope OrderScope) (gopinion.Page[Order], error) {
-        orders, total, err := repository.List(ctx.Request().Context(), scope, request.Offset(), request.Size)
+        orders, total, err := repository.List(ctx.Request().Context(), scope, request.Offset, request.Limit)
         if err != nil {
             return gopinion.Page[Order]{}, err
         }
@@ -99,7 +100,8 @@ return app.Run(ctx)
 `Get`, `Post`, `Put`, and `Patch` define singular JSON routes. `Delete` returns
 `204`. `List` requires a handler returning `Page[T]`. Their `Authorized...`
 variants prepare typed domain data and invoke the configured authorizer before
-the handler.
+the handler. List routes use bounded `limit`/`offset` requests, camelCase
+metadata, and RFC 5988 `Link` relations.
 
 ## Example
 
@@ -116,7 +118,7 @@ Then query it:
 
 ```sh
 curl -H 'Authorization: Bearer change-me' \
-  'http://localhost:8080/todos?page=1&page_size=2'
+  'http://localhost:8080/todos?limit=2&offset=0'
 ```
 
 ## Guarantee Boundary

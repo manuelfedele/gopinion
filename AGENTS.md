@@ -26,7 +26,11 @@ hatches for authentication, pagination, response envelopes, or server ownership.
   a generic `500` and are logged.
 - Required authorization fails startup without an authorizer, rejects routes
   without typed authorization phases, and never invokes handlers after denial.
-- Pagination-required applications cannot return unbounded top-level collections.
+- `New` loads only `gopinion.yaml` from the process working directory.
+- Authorization preparation is read-only; mutations occur only in handlers
+  after an `Allow` decision.
+- Pagination-required applications use bounded `limit`/`offset` collection
+  responses with camelCase metadata and RFC 5988 `Link` relations.
 - Request bodies remain size-bounded and strictly decode exactly one JSON value.
 - Framework-owned responses use fixed JSON envelopes and `nosniff`.
 - `App.Run` owns the listener, timeouts, cancellation, and graceful shutdown.

@@ -30,15 +30,14 @@ not be a top-level array, map, or page.
     {"id": "u-18", "name": "Grace"}
   ],
   "pagination": {
-    "page": 1,
-    "page_size": 25,
-    "total_items": 42,
-    "total_pages": 2
+    "limit": 25,
+    "offset": 0,
+    "totalItems": 42
   }
 }
 ```
 
-For zero items, `data` is `[]` and `total_pages` is `0`.
+For zero items, `data` is `[]` and `totalItems` is `0`.
 
 ## Error
 
@@ -65,6 +64,13 @@ A method mismatch and generated `OPTIONS` response also set an `Allow` header:
 
 ```text
 Allow: GET, HEAD, OPTIONS
+```
+
+Paginated responses use the RFC 5988 `Link` header. Available relations are
+`first`, `prev`, `next`, and `last`:
+
+```text
+Link: </users?limit=25&offset=0>; rel="first", </users?limit=25&offset=25>; rel="next", </users?limit=25&offset=25>; rel="last"
 ```
 
 An authentication failure sets `WWW-Authenticate`. The default challenge is

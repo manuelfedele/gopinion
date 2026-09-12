@@ -47,7 +47,6 @@ Register it at application construction:
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(apiKeyAuthenticator{keys: keys}),
     gopinion.WithAuthorizer(authorizer),
 )

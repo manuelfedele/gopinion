@@ -10,7 +10,7 @@ This example exposes a single authenticated list endpoint.
 ## 1. Configure policy
 
 ```yaml title="gopinion.yaml"
-version: 2
+version: 3
 
 server:
   address: ":8080"
@@ -23,8 +23,9 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 2
-  maximum_size: 10
+  default_limit: 2
+  maximum_limit: 10
+  maximum_offset: 100
 ```
 
 ## 2. Supply an authenticator
@@ -100,17 +101,17 @@ func prepareListTasks(
 }
 
 func listTasks(_ gopinion.Context, request gopinion.PageRequest, _ string) (gopinion.Page[task], error) {
-    start := request.Offset()
+    start := request.Offset
     if start > len(tasks) {
         start = len(tasks)
     }
-    end := min(start+request.Size, len(tasks))
+    end := min(start+request.Limit, len(tasks))
     return gopinion.NewPage(tasks[start:end], int64(len(tasks)), request)
 }
 ```
 
 `PageRequest` is validated before your handler runs. `NewPage` then verifies
-that the returned item count fits the requested size and declared total.
+that the returned item count fits the requested limit and declared total.
 
 ## 5. Assemble and run
 
@@ -137,7 +138,6 @@ func main() {
     }
 
     app, err := gopinion.New(
-        "gopinion.yaml",
         gopinion.WithAuthenticator(tokenAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
         gopinion.WithAuthorizer(taskAuthorizer{}),
     )
@@ -182,7 +182,7 @@ With a credential:
 
 ```sh
 curl -H 'Authorization: Bearer local-secret' \
-  'http://localhost:8080/tasks?page=1&page_size=2'
+  'http://localhost:8080/tasks?limit=2&offset=0'
 ```
 
 ```json
@@ -192,10 +192,9 @@ curl -H 'Authorization: Bearer local-secret' \
     {"id": 2, "title": "Authenticate requests"}
   ],
   "pagination": {
-    "page": 1,
-    "page_size": 2,
-    "total_items": 3,
-    "total_pages": 2
+    "limit": 2,
+    "offset": 0,
+    "totalItems": 3
   }
 }
 ```

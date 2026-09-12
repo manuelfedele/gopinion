@@ -40,7 +40,8 @@ type AuthorizationRequest struct {
 }
 
 // AuthorizationPlan carries an authorization request and the prepared domain
-// value made available to the handler only after an Allow decision.
+// value made available to the handler only after an Allow decision. Preparation
+// runs before authorization and must not mutate durable or external state.
 type AuthorizationPlan[T any] struct {
 	Request AuthorizationRequest
 	Value   T

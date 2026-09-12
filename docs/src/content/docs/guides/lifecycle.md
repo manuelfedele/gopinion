@@ -12,7 +12,6 @@ policy chain.
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
     gopinion.WithAuthorizer(authorizer),
 )

@@ -6,15 +6,10 @@ import (
 	"fmt"
 )
 
-// PageRequest contains validated, one-based pagination coordinates.
+// PageRequest contains validated pagination bounds.
 type PageRequest struct {
-	Page int
-	Size int
-}
-
-// Offset returns the zero-based item offset represented by the request.
-func (request PageRequest) Offset() int {
-	return (request.Page - 1) * request.Size
+	Limit  int
+	Offset int
 }
 
 // Page is the only collection response accepted by a list route.
@@ -26,26 +21,22 @@ type Page[T any] struct {
 
 // NewPage creates a validated paginated response.
 func NewPage[T any](items []T, total int64, request PageRequest) (Page[T], error) {
-	if request.Page <= 0 {
-		return Page[T]{}, errors.New("page must be greater than zero")
+	if request.Limit <= 0 {
+		return Page[T]{}, errors.New("limit must be greater than zero")
 	}
-	if request.Size <= 0 {
-		return Page[T]{}, errors.New("page size must be greater than zero")
-	}
-	maximumInteger := int(^uint(0) >> 1)
-	if request.Page > 1 && request.Page-1 > maximumInteger/request.Size {
-		return Page[T]{}, errors.New("page offset is too large")
+	if request.Offset < 0 {
+		return Page[T]{}, errors.New("offset must not be negative")
 	}
 	if total < 0 {
 		return Page[T]{}, errors.New("total items must not be negative")
 	}
-	if len(items) > request.Size {
-		return Page[T]{}, fmt.Errorf("page contains %d items but page size is %d", len(items), request.Size)
+	if len(items) > request.Limit {
+		return Page[T]{}, fmt.Errorf("page contains %d items but limit is %d", len(items), request.Limit)
 	}
 	if int64(len(items)) > total {
 		return Page[T]{}, fmt.Errorf("page contains %d items but total is %d", len(items), total)
 	}
-	offset := int64(request.Offset())
+	offset := int64(request.Offset)
 	if len(items) > 0 && (offset >= total || int64(len(items)) > total-offset) {
 		return Page[T]{}, fmt.Errorf("page items exceed total at offset %d", offset)
 	}
@@ -73,16 +64,27 @@ func (page Page[T]) TotalItems() int64 {
 
 func (page Page[T]) pageMarker() {}
 
+func (page Page[T]) pagination() (PageRequest, int64) {
+	return page.request, page.total
+}
+
 func (page Page[T]) validate() error {
-	if page.request.Page <= 0 || page.request.Size <= 0 {
+	if page.request.Limit <= 0 || page.request.Offset < 0 {
 		return errors.New("page was not created with gopinion.NewPage")
 	}
-	offset := int64(page.request.Offset())
-	if page.total < 0 || len(page.items) > page.request.Size || int64(len(page.items)) > page.total ||
+	offset := int64(page.request.Offset)
+	if page.total < 0 || len(page.items) > page.request.Limit || int64(len(page.items)) > page.total ||
 		len(page.items) > 0 && (offset >= page.total || int64(len(page.items)) > page.total-offset) {
 		return errors.New("page is invalid")
 	}
 	return nil
+}
+
+func (page Page[T]) validateRequest(request PageRequest) error {
+	if page.request != request {
+		return errors.New("page request does not match the validated request")
+	}
+	return page.validate()
 }
 
 // MarshalJSON emits the framework's fixed collection envelope.
@@ -91,31 +93,23 @@ func (page Page[T]) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	totalPages := page.total / int64(page.request.Size)
-	if page.total%int64(page.request.Size) != 0 {
-		totalPages++
-	}
-
 	return json.Marshal(struct {
 		Data       []T `json:"data"`
 		Pagination struct {
-			Page       int   `json:"page"`
-			PageSize   int   `json:"page_size"`
-			TotalItems int64 `json:"total_items"`
-			TotalPages int64 `json:"total_pages"`
+			Limit      int   `json:"limit"`
+			Offset     int   `json:"offset"`
+			TotalItems int64 `json:"totalItems"`
 		} `json:"pagination"`
 	}{
 		Data: page.items,
 		Pagination: struct {
-			Page       int   `json:"page"`
-			PageSize   int   `json:"page_size"`
-			TotalItems int64 `json:"total_items"`
-			TotalPages int64 `json:"total_pages"`
+			Limit      int   `json:"limit"`
+			Offset     int   `json:"offset"`
+			TotalItems int64 `json:"totalItems"`
 		}{
-			Page:       page.request.Page,
-			PageSize:   page.request.Size,
+			Limit:      page.request.Limit,
+			Offset:     page.request.Offset,
 			TotalItems: page.total,
-			TotalPages: totalPages,
 		},
 	})
 }

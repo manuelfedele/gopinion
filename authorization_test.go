@@ -9,8 +9,8 @@ import (
 )
 
 func TestNewFailsClosedWithoutAuthorizer(t *testing.T) {
-	_, err := New(
-		writeTestConfig(t, "version: 2\n"),
+	_, err := newApp(
+		writeTestConfig(t, "version: 3\n"),
 		WithAuthenticator(validTestAuthenticator()),
 	)
 	if err == nil || !strings.Contains(err.Error(), "no authorizer") {
@@ -20,8 +20,8 @@ func TestNewFailsClosedWithoutAuthorizer(t *testing.T) {
 
 func TestWithAuthorizerRejectsNil(t *testing.T) {
 	var authorizer *nilAuthorizer
-	_, err := New(
-		writeTestConfig(t, "version: 2\n"),
+	_, err := newApp(
+		writeTestConfig(t, "version: 3\n"),
 		WithAuthenticator(validTestAuthenticator()),
 		WithAuthorizer(authorizer),
 	)
@@ -136,6 +136,43 @@ func TestAuthenticationAndInputValidationPrecedeAuthorization(t *testing.T) {
 	}
 }
 
+func TestAuthorizedRoutePhaseOrder(t *testing.T) {
+	var phases []string
+	authenticator := AuthenticatorFunc(func(*http.Request) (Principal, error) {
+		phases = append(phases, "authenticate")
+		return Principal{Subject: "user-123"}, nil
+	})
+	authorizer := AuthorizerFunc(func(context.Context, Principal, AuthorizationRequest) (AuthorizationDecision, error) {
+		phases = append(phases, "authorize")
+		return Allow, nil
+	})
+	app, err := newApp(
+		writeTestConfig(t, "version: 3\n"),
+		WithAuthenticator(authenticator),
+		WithAuthorizer(authorizer),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := app.Register(AuthorizedGet("/resource", func(Context) (AuthorizationPlan[string], error) {
+		phases = append(phases, "prepare")
+		return testStringPlan(Context{})
+	}, func(Context, string) (string, error) {
+		phases = append(phases, "handle")
+		return "ok", nil
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/resource", "", "Bearer valid")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got, want := strings.Join(phases, ","), "authenticate,prepare,authorize,handle"; got != want {
+		t.Fatalf("phase order = %q, want %q", got, want)
+	}
+}
+
 func TestAuthorizerFailureIsInternalError(t *testing.T) {
 	app := newAuthorizedTestApp(t, AuthorizerFunc(func(context.Context, Principal, AuthorizationRequest) (AuthorizationDecision, error) {
 		return Deny, errors.New("policy store unavailable")
@@ -219,8 +256,8 @@ func TestAuthorizedRouteRejectsNilPreparation(t *testing.T) {
 }
 
 func TestAuthorizedRouteRequiresAuthorizerWhenPolicyDisabled(t *testing.T) {
-	app, err := New(
-		writeTestConfig(t, "version: 2\nauthorization:\n  mode: disabled\n"),
+	app, err := newApp(
+		writeTestConfig(t, "version: 3\nauthorization:\n  mode: disabled\n"),
 		WithAuthenticator(validTestAuthenticator()),
 	)
 	if err != nil {
@@ -246,8 +283,8 @@ func testStringPlan(Context) (AuthorizationPlan[string], error) {
 
 func newAuthorizedTestApp(t *testing.T, authorizer Authorizer) *App {
 	t.Helper()
-	app, err := New(
-		writeTestConfig(t, "version: 2\n"),
+	app, err := newApp(
+		writeTestConfig(t, "version: 3\n"),
 		WithAuthenticator(validTestAuthenticator()),
 		WithAuthorizer(authorizer),
 	)

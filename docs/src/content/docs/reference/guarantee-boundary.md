@@ -6,6 +6,8 @@ sidebar:
 ---
 
 GOpinion guarantees its policies across the HTTP surface owned by `App.Run`.
+`New` always selects `gopinion.yaml`, but the deployment remains responsible for
+controlling the process working directory and making that file immutable.
 
 ## Enforced by the framework
 
@@ -16,7 +18,8 @@ GOpinion guarantees its policies across the HTTP surface owned by `App.Run`.
 - Required authorization rejects application routes without typed preparation.
 - Prepared values reach handlers only after an `Allow` decision.
 - Singular top-level collections are rejected when pagination is required.
-- List handlers receive bounded pagination and return validated pages.
+- List handlers receive bounded `limit`/`offset` pagination, return validated
+  pages, and emit RFC 5988 navigation links.
 - POST request bodies are bounded and strictly decoded.
 - The raw mux and response writer are not exposed through framework APIs.
 - Network timeouts and graceful shutdown are always configured.
@@ -53,6 +56,8 @@ gopinion.AuthorizedGet(
 Authorization enforcement proves that each protected handler was preceded by a
 valid plan and an `Allow` decision. It cannot prove that an application selected
 the correct action, resource, or trusted attributes when constructing the plan.
+Preparation runs before authorization; the framework cannot prove that an
+arbitrary Go callback is read-only, so preparation must never mutate state.
 Generated `OPTIONS` and `405` responses expose registered method metadata to an
 authenticated caller without invoking domain authorization.
 

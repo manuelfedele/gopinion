@@ -42,7 +42,6 @@ Supply the dependency at construction:
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
     gopinion.WithAuthorizer(orderAuthorizer{}),
 )
@@ -50,7 +49,7 @@ app, err := gopinion.New(
 
 ## Prepare and authorize a resource
 
-The preparation phase loads the resource and supplies only trusted facts:
+The preparation phase reads the resource and supplies only trusted facts:
 
 ```go
 func prepareOrder(ctx gopinion.Context) (gopinion.AuthorizationPlan[Order], error) {
@@ -84,6 +83,10 @@ app.Register(gopinion.AuthorizedGet(
 
 The handler cannot run or receive `order` unless the authorizer returns
 `gopinion.Allow`.
+
+Preparation runs before the authorization decision. It must not mutate durable
+or external state. Put writes and other side effects in the handler, which only
+runs after `Allow`.
 
 ## Collections
 

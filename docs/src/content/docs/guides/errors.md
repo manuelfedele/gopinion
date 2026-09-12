@@ -67,7 +67,6 @@ logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 }))
 
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
     gopinion.WithAuthorizer(authorizer),
     gopinion.WithLogger(logger),
@@ -82,9 +81,11 @@ GOpinion creates the same envelope for framework failures:
 | --- | --- | --- |
 | 400 | `invalid_json` | Malformed JSON, unknown struct fields, or multiple values |
 | 400 | `invalid_query` | Malformed query-string encoding |
-| 400 | `invalid_page` | Invalid page number or offset |
-| 400 | `invalid_page_size` | Invalid page size |
-| 400 | `page_size_too_large` | Page size exceeds policy |
+| 400 | `invalid_limit` | Invalid or duplicate limit |
+| 400 | `limit_too_large` | Limit exceeds policy |
+| 400 | `invalid_offset` | Invalid or duplicate offset |
+| 400 | `offset_too_large` | Offset exceeds policy |
+| 400 | `invalid_pagination` | Legacy pagination parameter |
 | 401 | `unauthenticated` | Authentication failed |
 | 403 | `forbidden` | Authorization denied |
 | 404 | `not_found` | No matching route |

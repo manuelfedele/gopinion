@@ -11,7 +11,7 @@ The complete runnable application is in
 ## Policy
 
 ```yaml title="examples/todos/gopinion.yaml"
-version: 2
+version: 3
 
 server:
   address: ":8080"
@@ -24,8 +24,9 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 2
-  maximum_size: 10
+  default_limit: 2
+  maximum_limit: 10
+  maximum_offset: 100
 ```
 
 ## Dependencies
@@ -35,7 +36,6 @@ authorizer:
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(exampleAuthenticator{
         tokenHash: sha256.Sum256([]byte(token)),
     }),
@@ -61,8 +61,9 @@ app.Register(gopinion.AuthorizedGet(
 ))
 ```
 
-`prepareGetTodo` loads the todo and places its trusted owner in the
-authorization request. The handler receives the todo only after `Allow`.
+`prepareGetTodo` reads the todo and places its trusted owner in the authorization
+request. Preparation must not mutate state. The handler receives the todo only
+after `Allow`, and all mutations belong in that handler.
 
 The list preparation returns an owner scope. `listTodos` filters by that scope
 before applying the page offset and computes totals from visible todos. A
@@ -79,7 +80,7 @@ List the first page:
 
 ```sh
 curl -H 'Authorization: Bearer change-me' \
-  'http://localhost:8080/todos?page=1&page_size=2'
+  'http://localhost:8080/todos?limit=2&offset=0'
 ```
 
 Read an owned item:
@@ -101,5 +102,5 @@ curl -i -H 'Authorization: Bearer change-me' \
 
 # Page above policy: 400
 curl -i -H 'Authorization: Bearer change-me' \
-  'http://localhost:8080/todos?page_size=50'
+  'http://localhost:8080/todos?limit=50'
 ```

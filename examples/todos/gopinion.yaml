@@ -1,4 +1,4 @@
-version: 2
+version: 3
 
 server:
   address: ":8080"
@@ -11,5 +11,6 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 2
-  maximum_size: 10
+  default_limit: 2
+  maximum_limit: 10
+  maximum_offset: 100

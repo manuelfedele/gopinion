@@ -34,7 +34,7 @@ not offer local escape hatches.
 ## Start with constraints
 
 ```yaml title="gopinion.yaml"
-version: 2
+version: 3
 
 authentication:
   mode: required
@@ -44,8 +44,9 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 25
-  maximum_size: 100
+  default_limit: 25
+  maximum_limit: 100
+  maximum_offset: 10000
 ```
 
 Those policies are secure by default. Required authentication has no per-route
@@ -56,7 +57,6 @@ pagination required, a singular route cannot return a top-level collection.
 
 ```go
 app, err := gopinion.New(
-    "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
     gopinion.WithAuthorizer(authorizer),
 )
