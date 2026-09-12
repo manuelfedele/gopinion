@@ -5,13 +5,14 @@ sidebar:
   order: 1
 ---
 
-GOpinion loads one YAML document and rejects unknown fields. `version` must be
-present and non-null. Every other field has a default.
+GOpinion loads `gopinion.yaml` from the process working directory. It accepts
+one YAML document and rejects unknown fields. `version` must be present and
+non-null. Every other field has a default.
 
 ## Complete file
 
 ```yaml
-version: 2
+version: 3
 
 server:
   address: ":8080"
@@ -30,15 +31,16 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 25
-  maximum_size: 100
+  default_limit: 25
+  maximum_limit: 100
+  maximum_offset: 10000
 ```
 
 ## Root fields
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `version` | Yes | Must be integer `2` |
+| `version` | Yes | Must be integer `3` |
 | `server` | No | HTTP lifecycle and resource bounds |
 | `authentication` | No | Global identity policy |
 | `authorization` | No | Global access-control policy |
@@ -46,9 +48,9 @@ pagination:
 
 Multiple YAML documents are rejected.
 
-Version `2` introduces required authorization. Version `1` files are rejected
-so applications must choose and configure their authorization policy during
-migration.
+Version `3` replaces page-number pagination with `limit` and `offset`. Older
+files are rejected so applications must migrate the pagination contract
+explicitly.
 
 ## Server
 
@@ -89,8 +91,9 @@ authorized route still runs its authorization phase and requires an authorizer.
 | Field | Default | Validation |
 | --- | --- | --- |
 | `mode` | `required` | `required`, `disabled` |
-| `default_size` | `25` | Greater than zero |
-| `maximum_size` | `100` | At least `default_size` |
+| `default_limit` | `25` | Greater than zero |
+| `maximum_limit` | `100` | At least `default_limit` |
+| `maximum_offset` | `10000` | Non-negative; sum with `maximum_limit` must fit `int` |
 
 List routes may be used in either mode. `required` additionally prohibits
 top-level collections from singular routes.
@@ -100,7 +103,7 @@ top-level collections from singular routes.
 Misspelled field:
 
 ```yaml
-version: 2
+version: 3
 authentcation:
   mode: disabled
 ```
@@ -113,7 +116,7 @@ decode configuration: yaml: unmarshal errors:
 Unsupported policy:
 
 ```yaml
-version: 2
+version: 3
 authentication:
   mode: optional
 ```

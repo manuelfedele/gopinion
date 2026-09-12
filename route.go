@@ -292,7 +292,7 @@ func invokeListHandler[O any](ctx Context, request PageRequest, handler func(Con
 	if err != nil {
 		return nil, err
 	}
-	if err := page.validate(); err != nil {
+	if err := page.validateRequest(request); err != nil {
 		return nil, fmt.Errorf("invalid page returned by handler: %w", err)
 	}
 	return page, nil
@@ -303,7 +303,7 @@ func invokeListHandlerWithAuthorization[A, O any](ctx Context, request PageReque
 	if err != nil {
 		return nil, err
 	}
-	if err := page.validate(); err != nil {
+	if err := page.validateRequest(request); err != nil {
 		return nil, fmt.Errorf("invalid page returned by handler: %w", err)
 	}
 	return page, nil
@@ -311,6 +311,7 @@ func invokeListHandlerWithAuthorization[A, O any](ctx Context, request PageReque
 
 type pageValue interface {
 	pageMarker()
+	pagination() (PageRequest, int64)
 }
 
 func isCollectionType(valueType reflect.Type) bool {

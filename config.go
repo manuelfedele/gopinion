@@ -50,9 +50,10 @@ type authorizationConfig struct {
 }
 
 type paginationConfig struct {
-	Mode        policyMode `yaml:"mode"`
-	DefaultSize int        `yaml:"default_size"`
-	MaximumSize int        `yaml:"maximum_size"`
+	Mode          policyMode `yaml:"mode"`
+	DefaultLimit  int        `yaml:"default_limit"`
+	MaximumLimit  int        `yaml:"maximum_limit"`
+	MaximumOffset int        `yaml:"maximum_offset"`
 }
 
 func defaultConfig() config {
@@ -69,9 +70,10 @@ func defaultConfig() config {
 		Authentication: authenticationConfig{Mode: policyRequired},
 		Authorization:  authorizationConfig{Mode: policyRequired},
 		Pagination: paginationConfig{
-			Mode:        policyRequired,
-			DefaultSize: 25,
-			MaximumSize: 100,
+			Mode:          policyRequired,
+			DefaultLimit:  25,
+			MaximumLimit:  100,
+			MaximumOffset: 10000,
 		},
 	}
 }
@@ -108,8 +110,8 @@ func (cfg *config) validate() error {
 	if cfg.Version == nil {
 		return errors.New("version is required")
 	}
-	if *cfg.Version != 2 {
-		return fmt.Errorf("version must be 2, got %d", *cfg.Version)
+	if *cfg.Version != 3 {
+		return fmt.Errorf("version must be 3, got %d", *cfg.Version)
 	}
 	if cfg.Server.Address == "" {
 		return errors.New("server.address must not be empty")
@@ -156,11 +158,18 @@ func (cfg *config) validate() error {
 	if err := validatePolicyMode("pagination.mode", cfg.Pagination.Mode); err != nil {
 		return err
 	}
-	if cfg.Pagination.DefaultSize <= 0 {
-		return errors.New("pagination.default_size must be greater than zero")
+	if cfg.Pagination.DefaultLimit <= 0 {
+		return errors.New("pagination.default_limit must be greater than zero")
 	}
-	if cfg.Pagination.MaximumSize < cfg.Pagination.DefaultSize {
-		return errors.New("pagination.maximum_size must be greater than or equal to pagination.default_size")
+	if cfg.Pagination.MaximumLimit < cfg.Pagination.DefaultLimit {
+		return errors.New("pagination.maximum_limit must be greater than or equal to pagination.default_limit")
+	}
+	if cfg.Pagination.MaximumOffset < 0 {
+		return errors.New("pagination.maximum_offset must not be negative")
+	}
+	maximumInteger := int(^uint(0) >> 1)
+	if cfg.Pagination.MaximumOffset > maximumInteger-cfg.Pagination.MaximumLimit {
+		return errors.New("pagination.maximum_offset plus pagination.maximum_limit is too large")
 	}
 	return nil
 }

@@ -23,7 +23,7 @@ func TestBodyRouteMethodsStrictlyDecodeAndReturnExpectedStatus(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			app := newAuthenticatedTestApp(t, "version: 2\n")
+			app := newAuthenticatedTestApp(t, "version: 3\n")
 			if err := app.Register(test.constructor("/resource", func(_ Context, input input) (string, error) {
 				return input.Name, nil
 			})); err != nil {
@@ -44,7 +44,7 @@ func TestBodyRouteMethodsStrictlyDecodeAndReturnExpectedStatus(t *testing.T) {
 }
 
 func TestDeleteReturnsNoContent(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	called := false
 	if err := app.Register(Delete("/resource", func(Context) error {
 		called = true
@@ -63,7 +63,7 @@ func TestDeleteReturnsNoContent(t *testing.T) {
 }
 
 func TestHeadRunsGetWithoutResponseBody(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	called := false
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		called = true
@@ -82,7 +82,7 @@ func TestHeadRunsGetWithoutResponseBody(t *testing.T) {
 }
 
 func TestOptionsIsGeneratedFromRegisteredMethods(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	called := false
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		called = true
@@ -122,7 +122,7 @@ func TestOptionsIsGeneratedFromRegisteredMethods(t *testing.T) {
 }
 
 func TestGeneralOptionsRemainsInsideAuthenticatedHandler(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if !app.newServer().DisableGeneralOptionsHandler {
 		t.Fatal("http.Server general OPTIONS handler is enabled")
 	}
@@ -137,7 +137,7 @@ func TestGeneralOptionsRemainsInsideAuthenticatedHandler(t *testing.T) {
 }
 
 func TestOptionsRejectsServeMuxRedirectPaths(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/tree/", func(Context) (string, error) {
 		return "value", nil
 	})); err != nil {
@@ -178,7 +178,7 @@ func TestAuthorizedBodyAndListRoutesPrepareValidatedInput(t *testing.T) {
 	if err := app.Register(AuthorizedList(
 		"/resources",
 		func(_ Context, request PageRequest) (AuthorizationPlan[string], error) {
-			listPrepared = request.Page == 2 && request.Size == 1
+			listPrepared = request.Offset == 1 && request.Limit == 1
 			return testStringPlan(Context{})
 		},
 		func(_ Context, request PageRequest, _ string) (Page[string], error) {
@@ -192,7 +192,7 @@ func TestAuthorizedBodyAndListRoutesPrepareValidatedInput(t *testing.T) {
 	if patchResponse.Code != http.StatusOK || !bodyPrepared {
 		t.Fatalf("PATCH response = %d %q, prepared = %t", patchResponse.Code, patchResponse.Body.String(), bodyPrepared)
 	}
-	listResponse := performRequest(app, http.MethodGet, "/resources?page=2&page_size=1", "", "Bearer valid")
+	listResponse := performRequest(app, http.MethodGet, "/resources?offset=1&limit=1", "", "Bearer valid")
 	if listResponse.Code != http.StatusOK || !listPrepared {
 		t.Fatalf("List response = %d %q, prepared = %t", listResponse.Code, listResponse.Body.String(), listPrepared)
 	}

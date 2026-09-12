@@ -77,7 +77,6 @@ func main() {
 	}
 
 	app, err := gopinion.New(
-		"gopinion.yaml",
 		gopinion.WithAuthenticator(exampleAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
 		gopinion.WithAuthorizer(exampleAuthorizer{}),
 	)
@@ -115,11 +114,11 @@ func listTodos(_ gopinion.Context, request gopinion.PageRequest, scope todoScope
 			visible = append(visible, candidate)
 		}
 	}
-	start := request.Offset()
+	start := request.Offset
 	if start > len(visible) {
 		start = len(visible)
 	}
-	end := start + request.Size
+	end := start + request.Limit
 	if end > len(visible) {
 		end = len(visible)
 	}

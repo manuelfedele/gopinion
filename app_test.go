@@ -10,14 +10,14 @@ import (
 )
 
 func TestNewFailsClosedWithoutAuthenticator(t *testing.T) {
-	_, err := New(writeTestConfig(t, "version: 2\n"))
+	_, err := newApp(writeTestConfig(t, "version: 3\n"))
 	if err == nil || !strings.Contains(err.Error(), "no authenticator") {
 		t.Fatalf("New() error = %v, want missing authenticator error", err)
 	}
 }
 
 func TestAuthenticationWrapsEveryRoute(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	called := false
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		called = true
@@ -47,8 +47,8 @@ func TestAuthenticationWrapsEveryRoute(t *testing.T) {
 }
 
 func TestAuthenticatorFailureIsInternalError(t *testing.T) {
-	app, err := New(
-		writeTestConfig(t, "version: 2\nauthorization:\n  mode: disabled\n"),
+	app, err := newApp(
+		writeTestConfig(t, "version: 3\nauthorization:\n  mode: disabled\n"),
 		WithAuthenticator(AuthenticatorFunc(func(*http.Request) (Principal, error) {
 			return Principal{}, errors.New("identity provider unavailable")
 		})),
@@ -64,7 +64,7 @@ func TestAuthenticatorFailureIsInternalError(t *testing.T) {
 }
 
 func TestAuthenticatorCanCustomizeChallenge(t *testing.T) {
-	app, err := New(writeTestConfig(t, "version: 2\nauthorization:\n  mode: disabled\n"), WithAuthenticator(challengingAuthenticator{}))
+	app, err := newApp(writeTestConfig(t, "version: 3\nauthorization:\n  mode: disabled\n"), WithAuthenticator(challengingAuthenticator{}))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -76,7 +76,7 @@ func TestAuthenticatorCanCustomizeChallenge(t *testing.T) {
 }
 
 func TestAuthenticatedPrincipalReachesHandler(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/me", func(context Context) (string, error) {
 		return context.Principal().Subject, nil
 	})); err != nil {
@@ -93,7 +93,7 @@ func TestAuthenticatedPrincipalReachesHandler(t *testing.T) {
 }
 
 func TestPathValueReachesHandler(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/resources/{id}", func(context Context) (string, error) {
 		return context.PathValue("id"), nil
 	})); err != nil {
@@ -107,7 +107,7 @@ func TestPathValueReachesHandler(t *testing.T) {
 }
 
 func TestAuthenticatedNotFoundAndMethodNotAllowedUseErrorEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		return "ok", nil
 	})); err != nil {
@@ -129,7 +129,7 @@ func TestAuthenticatedNotFoundAndMethodNotAllowedUseErrorEnvelope(t *testing.T) 
 }
 
 func TestServeMuxRedirectsUseNotFoundEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/tree/", func(Context) (string, error) {
 		return "ok", nil
 	})); err != nil {
@@ -148,7 +148,7 @@ func TestServeMuxRedirectsUseNotFoundEnvelope(t *testing.T) {
 }
 
 func TestAuthenticationCanOnlyBeDisabledGlobally(t *testing.T) {
-	app, err := New(writeTestConfig(t, "version: 2\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\n"))
+	app, err := newApp(writeTestConfig(t, "version: 3\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\n"))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -165,9 +165,9 @@ func TestAuthenticationCanOnlyBeDisabledGlobally(t *testing.T) {
 }
 
 func TestPaginationDefaultsAndEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\npagination:\n  default_size: 2\n  maximum_size: 4\n")
+	app := newAuthenticatedTestApp(t, "version: 3\npagination:\n  default_limit: 2\n  maximum_limit: 4\n")
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
-		if request.Page != 1 || request.Size != 2 || request.Offset() != 0 {
+		if request.Limit != 2 || request.Offset != 0 {
 			t.Fatalf("page request = %+v", request)
 		}
 		return NewPage([]string{"one", "two"}, 3, request)
@@ -176,14 +176,22 @@ func TestPaginationDefaultsAndEnvelope(t *testing.T) {
 	}
 
 	response := performRequest(app, http.MethodGet, "/widgets", "", "Bearer valid")
-	want := "{\"data\":[\"one\",\"two\"],\"pagination\":{\"page\":1,\"page_size\":2,\"total_items\":3,\"total_pages\":2}}\n"
+	want := "{\"data\":[\"one\",\"two\"],\"pagination\":{\"limit\":2,\"offset\":0,\"totalItems\":3}}\n"
 	if response.Code != http.StatusOK || response.Body.String() != want {
 		t.Fatalf("response = %d %q, want %q", response.Code, response.Body.String(), want)
 	}
+	wantLink := `</widgets?limit=2&offset=0>; rel="first", </widgets?limit=2&offset=2>; rel="next", </widgets?limit=2&offset=2>; rel="last"`
+	if response.Header().Get("Link") != wantLink {
+		t.Fatalf("Link = %q, want %q", response.Header().Get("Link"), wantLink)
+	}
+	head := performRequest(app, http.MethodHead, "/widgets", "", "Bearer valid")
+	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Link") != wantLink {
+		t.Fatalf("HEAD response = %d %q, Link = %q", head.Code, head.Body.String(), head.Header().Get("Link"))
+	}
 }
 
-func TestPaginationRejectsExcessivePageSize(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\npagination:\n  maximum_size: 30\n")
+func TestPaginationRejectsExcessiveLimit(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 3\npagination:\n  maximum_limit: 30\n")
 	called := false
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
 		called = true
@@ -192,8 +200,8 @@ func TestPaginationRejectsExcessivePageSize(t *testing.T) {
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	response := performRequest(app, http.MethodGet, "/widgets?page_size=31", "", "Bearer valid")
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "page_size_too_large") {
+	response := performRequest(app, http.MethodGet, "/widgets?limit=31", "", "Bearer valid")
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "limit_too_large") {
 		t.Fatalf("response = %d %q", response.Code, response.Body.String())
 	}
 	if called {
@@ -202,7 +210,7 @@ func TestPaginationRejectsExcessivePageSize(t *testing.T) {
 }
 
 func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
 		return NewPage([]string{}, 0, request)
 	})); err != nil {
@@ -213,9 +221,15 @@ func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
 		target string
 		code   string
 	}{
-		{target: "/widgets?page=1;page_size=2", code: "invalid_query"},
-		{target: "/widgets?page=1&page=2", code: "invalid_page"},
-		{target: "/widgets?page_size=1&page_size=2", code: "invalid_page_size"},
+		{target: "/widgets?limit=1;offset=2", code: "invalid_query"},
+		{target: "/widgets?limit=1&limit=2", code: "invalid_limit"},
+		{target: "/widgets?offset=1&offset=2", code: "invalid_offset"},
+		{target: "/widgets?limit=0", code: "invalid_limit"},
+		{target: "/widgets?limit=", code: "invalid_limit"},
+		{target: "/widgets?offset=-1", code: "invalid_offset"},
+		{target: "/widgets?offset=", code: "invalid_offset"},
+		{target: "/widgets?page=1", code: "invalid_pagination"},
+		{target: "/widgets?page_size=10", code: "invalid_pagination"},
 	}
 	for _, test := range tests {
 		response := performRequest(app, http.MethodGet, test.target, "", "Bearer valid")
@@ -223,10 +237,98 @@ func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
 			t.Fatalf("response for %q = %d %q", test.target, response.Code, response.Body.String())
 		}
 	}
+
+	empty := performRequest(app, http.MethodGet, "/widgets", "", "Bearer valid")
+	if empty.Code != http.StatusOK || empty.Header().Get("Link") != "" {
+		t.Fatalf("empty response = %d, Link = %q", empty.Code, empty.Header().Get("Link"))
+	}
+	emptyHead := performRequest(app, http.MethodHead, "/widgets?limit=", "", "Bearer valid")
+	if emptyHead.Code != http.StatusBadRequest {
+		t.Fatalf("HEAD empty limit response = %d %q", emptyHead.Code, emptyHead.Body.String())
+	}
+}
+
+func TestPaginationRejectsExcessiveOffsetBeforeHandler(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 3\npagination:\n  maximum_offset: 10\n")
+	called := false
+	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
+		called = true
+		return NewPage([]string{}, 0, request)
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/widgets?offset=11", "", "Bearer valid")
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"offset_too_large"`) {
+		t.Fatalf("response = %d %q", response.Code, response.Body.String())
+	}
+	if called {
+		t.Fatal("handler was called with excessive offset")
+	}
+
+	boundary := performRequest(app, http.MethodGet, "/widgets?offset=10", "", "Bearer valid")
+	if boundary.Code != http.StatusOK || !called {
+		t.Fatalf("boundary response = %d, handler called = %t", boundary.Code, called)
+	}
+}
+
+func TestPaginationRejectsPageForDifferentRequest(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(PageRequest) PageRequest
+	}{
+		{name: "limit", change: func(request PageRequest) PageRequest { request.Limit++; return request }},
+		{name: "offset", change: func(request PageRequest) PageRequest { request.Offset++; return request }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := newAuthenticatedTestApp(t, "version: 3\n")
+			if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
+				return NewPage([]string{}, 0, test.change(request))
+			})); err != nil {
+				t.Fatalf("Register() error = %v", err)
+			}
+
+			response := performRequest(app, http.MethodGet, "/widgets?limit=2&offset=0", "", "Bearer valid")
+			if response.Code != http.StatusInternalServerError || response.Header().Get("Link") != "" {
+				t.Fatalf("response = %d, Link = %q", response.Code, response.Header().Get("Link"))
+			}
+		})
+	}
+}
+
+func TestPaginationLinkHeaderPreservesQueryAndUsesRegisteredRelations(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 3\n")
+	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
+		return NewPage([]string{"three", "four"}, 5, request)
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/widgets?status=open&offset=2&limit=2", "", "Bearer valid")
+	want := `</widgets?limit=2&offset=0&status=open>; rel="first", </widgets?limit=2&offset=0&status=open>; rel="prev", </widgets?limit=2&offset=4&status=open>; rel="next", </widgets?limit=2&offset=4&status=open>; rel="last"`
+	if response.Code != http.StatusOK || response.Header().Get("Link") != want {
+		t.Fatalf("response = %d, Link = %q, want %q", response.Code, response.Header().Get("Link"), want)
+	}
+}
+
+func TestPaginationLinkHeaderOmitsOffsetsAbovePolicyMaximum(t *testing.T) {
+	app := newAuthenticatedTestApp(t, "version: 3\npagination:\n  default_limit: 2\n  maximum_limit: 2\n  maximum_offset: 2\n")
+	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
+		return NewPage([]string{"three", "four"}, 10, request)
+	})); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	response := performRequest(app, http.MethodGet, "/widgets?offset=2", "", "Bearer valid")
+	want := `</widgets?limit=2&offset=0>; rel="first", </widgets?limit=2&offset=0>; rel="prev"`
+	if response.Code != http.StatusOK || response.Header().Get("Link") != want {
+		t.Fatalf("response = %d, Link = %q, want %q", response.Code, response.Header().Get("Link"), want)
+	}
 }
 
 func TestRequiredPaginationRejectsCollectionGet(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	err := app.Register(Get("/widgets", func(Context) ([]string, error) {
 		return []string{"one"}, nil
 	}))
@@ -236,7 +338,7 @@ func TestRequiredPaginationRejectsCollectionGet(t *testing.T) {
 }
 
 func TestRequiredPaginationRejectsDynamicCollection(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/widgets", func(Context) (any, error) {
 		return []string{"one"}, nil
 	})); err != nil {
@@ -250,8 +352,8 @@ func TestRequiredPaginationRejectsDynamicCollection(t *testing.T) {
 }
 
 func TestDisabledPaginationAllowsCollectionGet(t *testing.T) {
-	content := "version: 2\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\npagination:\n  mode: disabled\n"
-	app, err := New(writeTestConfig(t, content))
+	content := "version: 3\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\npagination:\n  mode: disabled\n"
+	app, err := newApp(writeTestConfig(t, content))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -271,7 +373,7 @@ func TestPostStrictlyDecodesJSON(t *testing.T) {
 	type input struct {
 		Name string `json:"name"`
 	}
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Post("/widgets", func(_ Context, input input) (string, error) {
 		return input.Name, nil
 	})); err != nil {
@@ -285,7 +387,7 @@ func TestPostStrictlyDecodesJSON(t *testing.T) {
 }
 
 func TestHandlerHTTPErrorIsExposed(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/missing", func(Context) (string, error) {
 		return "", NewHTTPError(http.StatusNotFound, "not_found", "The resource does not exist.")
 	})); err != nil {
@@ -299,7 +401,7 @@ func TestHandlerHTTPErrorIsExposed(t *testing.T) {
 }
 
 func TestResponseEncodingFailureDoesNotSendSuccess(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/broken", func(Context) (struct{ Value any }, error) {
 		return struct{ Value any }{Value: make(chan int)}, nil
 	})); err != nil {
@@ -313,7 +415,7 @@ func TestResponseEncodingFailureDoesNotSendSuccess(t *testing.T) {
 }
 
 func TestHandlerPanicIsContained(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	if err := app.Register(Get("/panic", func(Context) (string, error) {
 		panic("boom")
 	})); err != nil {
@@ -327,7 +429,7 @@ func TestHandlerPanicIsContained(t *testing.T) {
 }
 
 func TestRegisterRejectsNilHandlerAndDuplicateRoute(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	var handler func(Context) (string, error)
 	if err := app.Register(Get("/nil", handler)); err == nil || !strings.Contains(err.Error(), "must not be nil") {
 		t.Fatalf("Register(nil handler) error = %v", err)
@@ -343,7 +445,7 @@ func TestRegisterRejectsNilHandlerAndDuplicateRoute(t *testing.T) {
 }
 
 func TestPostRejectsOversizedBody(t *testing.T) {
-	content := "version: 2\nserver:\n  max_body_bytes: 8\n"
+	content := "version: 3\nserver:\n  max_body_bytes: 8\n"
 	app := newAuthenticatedTestApp(t, content)
 	if err := app.Register(Post("/widgets", func(_ Context, input map[string]string) (string, error) {
 		return input["name"], nil
@@ -358,7 +460,7 @@ func TestPostRejectsOversizedBody(t *testing.T) {
 }
 
 func TestPostRejectsOversizedTrailingData(t *testing.T) {
-	content := "version: 2\nserver:\n  max_body_bytes: 3\n"
+	content := "version: 3\nserver:\n  max_body_bytes: 3\n"
 	app := newAuthenticatedTestApp(t, content)
 	if err := app.Register(Post("/widgets", func(_ Context, input map[string]string) (string, error) {
 		return input["name"], nil
@@ -373,7 +475,7 @@ func TestPostRejectsOversizedTrailingData(t *testing.T) {
 }
 
 func TestRunRejectsNilContextBeforeStarting(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 2\n")
+	app := newAuthenticatedTestApp(t, "version: 3\n")
 	//lint:ignore SA1012 Verify the public API rejects an invalid context safely.
 	if err := app.Run(nil); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("Run(nil) error = %v", err)
@@ -394,7 +496,7 @@ func newAuthenticatedTestApp(t *testing.T, configuration string) *App {
 		}
 		return Principal{Subject: "user-123"}, nil
 	})
-	app, err := New(writeTestConfig(t, configuration), WithAuthenticator(authenticator))
+	app, err := newApp(writeTestConfig(t, configuration), WithAuthenticator(authenticator))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

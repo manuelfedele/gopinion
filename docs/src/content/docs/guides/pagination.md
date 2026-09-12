@@ -13,23 +13,22 @@ configured maximum, and gives handlers validated coordinates.
 ```yaml
 pagination:
   mode: required
-  default_size: 25
-  maximum_size: 100
+  default_limit: 25
+  maximum_limit: 100
+  maximum_offset: 10000
 ```
 
-Clients use one-based `page` and `page_size` parameters:
+Clients use zero-based `offset` and bounded `limit` parameters:
 
 ```text
-GET /orders?page=3&page_size=20
+GET /orders?limit=20&offset=40
 ```
 
 The handler receives:
 
 ```go
-gopinion.PageRequest{Page: 3, Size: 20}
+gopinion.PageRequest{Limit: 20, Offset: 40}
 ```
-
-`request.Offset()` returns `40`.
 
 ## Query a repository
 
@@ -42,8 +41,8 @@ func listOrders(
     items, total, err := orderRepository.ListAuthorized(
         ctx.Request().Context(),
         scope,
-        request.Offset(),
-        request.Size,
+        request.Offset,
+        request.Limit,
     )
     if err != nil {
         return gopinion.Page[Order]{}, err
@@ -87,10 +86,10 @@ func (r *OrderRepository) ListAuthorized(ctx context.Context, scope OrderScope, 
 
 `NewPage` rejects:
 
-- Page numbers or sizes below one
-- Offset arithmetic overflow
+- Limits below one
+- Negative offsets
 - Negative totals
-- More items than the requested page size
+- More items than the requested limit
 - More returned items than the declared total
 - Returned items that cannot exist at the requested offset
 
@@ -109,25 +108,35 @@ An empty page still serializes `data` as an empty array, never `null`.
     {"id": "o-102", "status": "pending"}
   ],
   "pagination": {
-    "page": 3,
-    "page_size": 20,
-    "total_items": 84,
-    "total_pages": 5
+    "limit": 20,
+    "offset": 40,
+    "totalItems": 84
   }
 }
 ```
+
+Collection responses also include RFC 5988 Web Linking relations while
+preserving non-pagination query parameters:
+
+```text
+Link: </orders?limit=20&offset=0>; rel="first", </orders?limit=20&offset=20>; rel="prev", </orders?limit=20&offset=60>; rel="next", </orders?limit=20&offset=80>; rel="last"
+```
+
+Only relations that are available are emitted. An empty collection has no
+`Link` header.
 
 ## Invalid client input
 
 | Input | Result |
 | --- | --- |
-| `page=0` | `400 invalid_page` |
-| `page=abc` | `400 invalid_page` |
-| `page_size=0` | `400 invalid_page_size` |
-| Size above maximum | `400 page_size_too_large` |
-| Offset overflow | `400 invalid_page` |
-| Duplicate `page` | `400 invalid_page` |
-| Duplicate `page_size` | `400 invalid_page_size` |
+| `limit=0` | `400 invalid_limit` |
+| `limit=abc` | `400 invalid_limit` |
+| Limit above maximum | `400 limit_too_large` |
+| `offset=-1` | `400 invalid_offset` |
+| Offset above maximum | `400 offset_too_large` |
+| Duplicate `limit` | `400 invalid_limit` |
+| Duplicate `offset` | `400 invalid_offset` |
+| Legacy `page` or `page_size` | `400 invalid_pagination` |
 | Malformed query encoding | `400 invalid_query` |
 
 ## Why ordinary GET cannot return a slice

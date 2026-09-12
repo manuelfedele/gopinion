@@ -48,7 +48,7 @@ authorization:
 ```
 
 ```go
-app, err := gopinion.New("gopinion.yaml")
+app, err := gopinion.New()
 ```
 
 Supplying no authenticator while mode is `required` fails application
@@ -79,8 +79,8 @@ app.Register(gopinion.AuthorizedList(
         users, total, err := repository.Page(
             ctx.Request().Context(),
             scope,
-            request.Offset(),
-            request.Size,
+            request.Offset,
+            request.Limit,
         )
         if err != nil {
             return gopinion.Page[User]{}, err
@@ -96,7 +96,7 @@ app.Register(gopinion.AuthorizedList(
 2. Application construction fails when required dependencies are missing.
 3. Route registration rejects incompatible response contracts.
 4. Request handling authenticates before dispatch and validates inputs.
-5. Typed preparation constructs trusted authorization facts.
+5. Read-only typed preparation constructs trusted authorization facts.
 6. The authorizer must return `Allow` before the handler runs.
 7. Response handling checks dynamic collection values and fixed envelopes.
 

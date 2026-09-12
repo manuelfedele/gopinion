@@ -26,7 +26,7 @@ go list -m github.com/manuelfedele/gopinion
 Every application starts from an explicit `gopinion.yaml`:
 
 ```yaml title="gopinion.yaml"
-version: 2
+version: 3
 ```
 
 That minimal file enables fail-closed policy defaults. Omitted fields receive:
@@ -49,8 +49,9 @@ authorization:
 
 pagination:
   mode: required
-  default_size: 25
-  maximum_size: 100
+  default_limit: 25
+  maximum_limit: 100
+  maximum_offset: 10000
 ```
 
 :::caution
@@ -77,8 +78,8 @@ my-service/
 └── go.sum
 ```
 
-GOpinion does not require this layout. The only structural requirement is that
-your process can resolve the configuration path passed to `gopinion.New`.
+`gopinion.yaml` must be in the process working directory. `gopinion.New` does
+not accept a path or environment override.
 
 ## Next step
 

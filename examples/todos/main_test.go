@@ -29,7 +29,7 @@ func TestExampleAuthorizerChecksOwnership(t *testing.T) {
 }
 
 func TestListTodosFiltersBeforePagination(t *testing.T) {
-	request := gopinion.PageRequest{Page: 1, Size: 10}
+	request := gopinion.PageRequest{Limit: 10}
 	page, err := listTodos(gopinion.Context{}, request, todoScope{OwnerID: "example-user"})
 	if err != nil {
 		t.Fatalf("listTodos() error = %v", err)

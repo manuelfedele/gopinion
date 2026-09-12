@@ -19,6 +19,8 @@ import (
 // collection while pagination is globally required.
 var ErrPaginationRequired = errors.New("pagination is required for collection responses")
 
+const configFileName = "gopinion.yaml"
+
 type options struct {
 	authenticator Authenticator
 	authorizer    Authorizer
@@ -84,8 +86,12 @@ type App struct {
 	routes  map[string]struct{}
 }
 
-// New loads the application's single policy file and constructs the framework.
-func New(configPath string, suppliedOptions ...Option) (*App, error) {
+// New loads gopinion.yaml from the current working directory and constructs the framework.
+func New(suppliedOptions ...Option) (*App, error) {
+	return newApp(configFileName, suppliedOptions...)
+}
+
+func newApp(configPath string, suppliedOptions ...Option) (*App, error) {
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -259,8 +265,12 @@ func (app *App) handle(definition routeDefinition) http.Handler {
 		}
 
 		var payload []byte
+		var linkHeader string
 		if definition.responseKind == responsePage {
 			payload, err = json.Marshal(output)
+			if err == nil {
+				linkHeader = paginationLinkHeader(request, output.(pageValue), app.config.Pagination.MaximumOffset)
+			}
 		} else {
 			payload, err = json.Marshal(struct {
 				Data any `json:"data"`
@@ -273,6 +283,9 @@ func (app *App) handle(definition routeDefinition) http.Handler {
 		}
 
 		writer.Header().Set("Content-Type", "application/json")
+		if linkHeader != "" {
+			writer.Header().Set("Link", linkHeader)
+		}
 		writer.WriteHeader(definition.status)
 		if request.Method == http.MethodHead {
 			return
@@ -437,37 +450,53 @@ func pageRequestFromContext(context Context) (PageRequest, error) {
 	if err != nil {
 		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_query", "The query string is not valid.")
 	}
-	if len(query["page"]) > 1 {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page", "The page parameter must be specified at most once.")
+	if _, exists := query["page"]; exists {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_pagination", "Use the limit and offset parameters for pagination.")
 	}
-	if len(query["page_size"]) > 1 {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page_size", "The page_size parameter must be specified at most once.")
+	if _, exists := query["page_size"]; exists {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_pagination", "Use the limit and offset parameters for pagination.")
 	}
-	page, err := parsePositiveInteger(query.Get("page"), 1)
+	if len(query["limit"]) > 1 {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_limit", "The limit parameter must be specified at most once.")
+	}
+	if len(query["offset"]) > 1 {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_offset", "The offset parameter must be specified at most once.")
+	}
+	if values, exists := query["limit"]; exists && values[0] == "" {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_limit", "The limit parameter must be a positive integer.")
+	}
+	if values, exists := query["offset"]; exists && values[0] == "" {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_offset", "The offset parameter must be a non-negative integer.")
+	}
+	limit, err := parsePositiveInteger(query.Get("limit"), contextDefaultLimit(context))
 	if err != nil {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page", "The page parameter must be a positive integer.")
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_limit", "The limit parameter must be a positive integer.")
 	}
-	size, err := parsePositiveInteger(query.Get("page_size"), contextPageDefault(context))
+	offset, err := parseNonNegativeInteger(query.Get("offset"), 0)
 	if err != nil {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page_size", "The page_size parameter must be a positive integer.")
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_offset", "The offset parameter must be a non-negative integer.")
 	}
-	maximum := contextPageMaximum(context)
-	if size > maximum {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "page_size_too_large", fmt.Sprintf("The page_size parameter must not exceed %d.", maximum))
+	maximum := contextMaximumLimit(context)
+	if limit > maximum {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "limit_too_large", fmt.Sprintf("The limit parameter must not exceed %d.", maximum))
 	}
-	maximumInteger := int(^uint(0) >> 1)
-	if page > 1 && page-1 > maximumInteger/size {
-		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "invalid_page", "The requested page offset is too large.")
+	maximumOffset := contextMaximumOffset(context)
+	if offset > maximumOffset {
+		return PageRequest{}, NewHTTPError(http.StatusBadRequest, "offset_too_large", fmt.Sprintf("The offset parameter must not exceed %d.", maximumOffset))
 	}
-	return PageRequest{Page: page, Size: size}, nil
+	return PageRequest{Limit: limit, Offset: offset}, nil
 }
 
-func contextPageDefault(context Context) int {
-	return context.pagination.DefaultSize
+func contextDefaultLimit(context Context) int {
+	return context.pagination.DefaultLimit
 }
 
-func contextPageMaximum(context Context) int {
-	return context.pagination.MaximumSize
+func contextMaximumLimit(context Context) int {
+	return context.pagination.MaximumLimit
+}
+
+func contextMaximumOffset(context Context) int {
+	return context.pagination.MaximumOffset
 }
 
 func parsePositiveInteger(value string, fallback int) (int, error) {
@@ -479,6 +508,57 @@ func parsePositiveInteger(value string, fallback int) (int, error) {
 		return 0, errors.New("value must be a positive integer")
 	}
 	return parsed, nil
+}
+
+func parseNonNegativeInteger(value string, fallback int) (int, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return 0, errors.New("value must be a non-negative integer")
+	}
+	return parsed, nil
+}
+
+func paginationLinkHeader(request *http.Request, page pageValue, maximumOffset int) string {
+	pagination, total := page.pagination()
+	if total == 0 {
+		return ""
+	}
+
+	limit := int64(pagination.Limit)
+	offset := int64(pagination.Offset)
+	lastOffset := (total - 1) / limit * limit
+	links := []string{paginationLink(request.URL, pagination.Limit, 0, "first")}
+	if offset > 0 {
+		previousOffset := offset - limit
+		if previousOffset < 0 {
+			previousOffset = 0
+		}
+		links = append(links, paginationLink(request.URL, pagination.Limit, previousOffset, "prev"))
+	}
+	if nextOffset := offset + limit; offset < total && limit < total-offset && nextOffset <= int64(maximumOffset) {
+		links = append(links, paginationLink(request.URL, pagination.Limit, nextOffset, "next"))
+	}
+	if lastOffset <= int64(maximumOffset) {
+		links = append(links, paginationLink(request.URL, pagination.Limit, lastOffset, "last"))
+	}
+	return strings.Join(links, ", ")
+}
+
+func paginationLink(requestURL *url.URL, limit int, offset int64, relation string) string {
+	target := *requestURL
+	target.Scheme = ""
+	target.Host = ""
+	target.User = nil
+	target.Fragment = ""
+	target.RawFragment = ""
+	query := target.Query()
+	query.Set("limit", strconv.Itoa(limit))
+	query.Set("offset", strconv.FormatInt(offset, 10))
+	target.RawQuery = query.Encode()
+	return fmt.Sprintf("<%s>; rel=\"%s\"", target.String(), relation)
 }
 
 func isNil(value any) bool {
