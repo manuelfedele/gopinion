@@ -1,0 +1,12 @@
+version: 1
+
+server:
+  address: ":8080"
+
+authentication:
+  mode: required
+
+pagination:
+  mode: required
+  default_size: 2
+  maximum_size: 10
