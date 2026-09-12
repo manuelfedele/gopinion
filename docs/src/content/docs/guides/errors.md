@@ -69,6 +69,7 @@ logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 app, err := gopinion.New(
     "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
+    gopinion.WithAuthorizer(authorizer),
     gopinion.WithLogger(logger),
 )
 ```
@@ -85,6 +86,7 @@ GOpinion creates the same envelope for framework failures:
 | 400 | `invalid_page_size` | Invalid page size |
 | 400 | `page_size_too_large` | Page size exceeds policy |
 | 401 | `unauthenticated` | Authentication failed |
+| 403 | `forbidden` | Authorization denied |
 | 404 | `not_found` | No matching route |
 | 405 | `method_not_allowed` | Path exists for another method |
 | 413 | `body_too_large` | Request body exceeds policy |

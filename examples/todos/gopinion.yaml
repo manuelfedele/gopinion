@@ -1,9 +1,12 @@
-version: 1
+version: 2
 
 server:
   address: ":8080"
 
 authentication:
+  mode: required
+
+authorization:
   mode: required
 
 pagination:

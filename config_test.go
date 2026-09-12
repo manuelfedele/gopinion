@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoadConfigAppliesSecureDefaults(t *testing.T) {
-	path := writeTestConfig(t, "version: 1\n")
+	path := writeTestConfig(t, "version: 2\n")
 
 	cfg, err := loadConfig(path)
 	if err != nil {
@@ -16,6 +16,9 @@ func TestLoadConfigAppliesSecureDefaults(t *testing.T) {
 	}
 	if cfg.Authentication.Mode != policyRequired {
 		t.Fatalf("authentication mode = %q, want %q", cfg.Authentication.Mode, policyRequired)
+	}
+	if cfg.Authorization.Mode != policyRequired {
+		t.Fatalf("authorization mode = %q, want %q", cfg.Authorization.Mode, policyRequired)
 	}
 	if cfg.Pagination.Mode != policyRequired {
 		t.Fatalf("pagination mode = %q, want %q", cfg.Pagination.Mode, policyRequired)
@@ -26,7 +29,7 @@ func TestLoadConfigAppliesSecureDefaults(t *testing.T) {
 }
 
 func TestLoadConfigRejectsUnknownFields(t *testing.T) {
-	path := writeTestConfig(t, "version: 1\nauthentcation:\n  mode: disabled\n")
+	path := writeTestConfig(t, "version: 2\nauthentcation:\n  mode: disabled\n")
 
 	_, err := loadConfig(path)
 	if err == nil || !strings.Contains(err.Error(), "field authentcation not found") {
@@ -43,8 +46,15 @@ func TestLoadConfigRequiresExplicitVersion(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRejectsLegacyVersion(t *testing.T) {
+	_, err := loadConfig(writeTestConfig(t, "version: 1\n"))
+	if err == nil || !strings.Contains(err.Error(), "version must be 2") {
+		t.Fatalf("loadConfig() error = %v, want version 2 error", err)
+	}
+}
+
 func TestLoadConfigRejectsMultipleDocuments(t *testing.T) {
-	path := writeTestConfig(t, "version: 1\n---\nversion: 1\n")
+	path := writeTestConfig(t, "version: 2\n---\nversion: 2\n")
 
 	_, err := loadConfig(path)
 	if err == nil || !strings.Contains(err.Error(), "multiple YAML documents") {
@@ -60,17 +70,27 @@ func TestLoadConfigValidatesPolicyAndPagination(t *testing.T) {
 	}{
 		{
 			name:    "unknown authentication mode",
-			content: "version: 1\nauthentication:\n  mode: optional\n",
+			content: "version: 2\nauthentication:\n  mode: optional\n",
 			want:    "authentication.mode must be",
 		},
 		{
+			name:    "unknown authorization mode",
+			content: "version: 2\nauthorization:\n  mode: optional\n",
+			want:    "authorization.mode must be",
+		},
+		{
+			name:    "authorization without authentication",
+			content: "version: 2\nauthentication:\n  mode: disabled\n",
+			want:    "authorization.mode cannot be required",
+		},
+		{
 			name:    "default larger than maximum",
-			content: "version: 1\npagination:\n  default_size: 101\n  maximum_size: 100\n",
+			content: "version: 2\npagination:\n  default_size: 101\n  maximum_size: 100\n",
 			want:    "maximum_size must be greater",
 		},
 		{
 			name:    "invalid duration",
-			content: "version: 1\nserver:\n  shutdown_timeout: never\n",
+			content: "version: 2\nserver:\n  shutdown_timeout: never\n",
 			want:    "server.shutdown_timeout is invalid",
 		},
 	}

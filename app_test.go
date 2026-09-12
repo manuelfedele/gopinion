@@ -10,14 +10,14 @@ import (
 )
 
 func TestNewFailsClosedWithoutAuthenticator(t *testing.T) {
-	_, err := New(writeTestConfig(t, "version: 1\n"))
+	_, err := New(writeTestConfig(t, "version: 2\n"))
 	if err == nil || !strings.Contains(err.Error(), "no authenticator") {
 		t.Fatalf("New() error = %v, want missing authenticator error", err)
 	}
 }
 
 func TestAuthenticationWrapsEveryRoute(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	called := false
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		called = true
@@ -48,7 +48,7 @@ func TestAuthenticationWrapsEveryRoute(t *testing.T) {
 
 func TestAuthenticatorFailureIsInternalError(t *testing.T) {
 	app, err := New(
-		writeTestConfig(t, "version: 1\n"),
+		writeTestConfig(t, "version: 2\nauthorization:\n  mode: disabled\n"),
 		WithAuthenticator(AuthenticatorFunc(func(*http.Request) (Principal, error) {
 			return Principal{}, errors.New("identity provider unavailable")
 		})),
@@ -64,7 +64,7 @@ func TestAuthenticatorFailureIsInternalError(t *testing.T) {
 }
 
 func TestAuthenticatorCanCustomizeChallenge(t *testing.T) {
-	app, err := New(writeTestConfig(t, "version: 1\n"), WithAuthenticator(challengingAuthenticator{}))
+	app, err := New(writeTestConfig(t, "version: 2\nauthorization:\n  mode: disabled\n"), WithAuthenticator(challengingAuthenticator{}))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -76,7 +76,7 @@ func TestAuthenticatorCanCustomizeChallenge(t *testing.T) {
 }
 
 func TestAuthenticatedPrincipalReachesHandler(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/me", func(context Context) (string, error) {
 		return context.Principal().Subject, nil
 	})); err != nil {
@@ -93,7 +93,7 @@ func TestAuthenticatedPrincipalReachesHandler(t *testing.T) {
 }
 
 func TestPathValueReachesHandler(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/resources/{id}", func(context Context) (string, error) {
 		return context.PathValue("id"), nil
 	})); err != nil {
@@ -107,7 +107,7 @@ func TestPathValueReachesHandler(t *testing.T) {
 }
 
 func TestAuthenticatedNotFoundAndMethodNotAllowedUseErrorEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/resource", func(Context) (string, error) {
 		return "ok", nil
 	})); err != nil {
@@ -123,13 +123,13 @@ func TestAuthenticatedNotFoundAndMethodNotAllowedUseErrorEnvelope(t *testing.T) 
 	if methodNotAllowed.Code != http.StatusMethodNotAllowed || !strings.Contains(methodNotAllowed.Body.String(), `"code":"method_not_allowed"`) {
 		t.Fatalf("method response = %d %q", methodNotAllowed.Code, methodNotAllowed.Body.String())
 	}
-	if methodNotAllowed.Header().Get("Allow") != "GET, HEAD" {
-		t.Fatalf("Allow = %q, want %q", methodNotAllowed.Header().Get("Allow"), "GET, HEAD")
+	if methodNotAllowed.Header().Get("Allow") != "GET, HEAD, OPTIONS" {
+		t.Fatalf("Allow = %q, want %q", methodNotAllowed.Header().Get("Allow"), "GET, HEAD, OPTIONS")
 	}
 }
 
 func TestServeMuxRedirectsUseNotFoundEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/tree/", func(Context) (string, error) {
 		return "ok", nil
 	})); err != nil {
@@ -148,7 +148,7 @@ func TestServeMuxRedirectsUseNotFoundEnvelope(t *testing.T) {
 }
 
 func TestAuthenticationCanOnlyBeDisabledGlobally(t *testing.T) {
-	app, err := New(writeTestConfig(t, "version: 1\nauthentication:\n  mode: disabled\n"))
+	app, err := New(writeTestConfig(t, "version: 2\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\n"))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -165,7 +165,7 @@ func TestAuthenticationCanOnlyBeDisabledGlobally(t *testing.T) {
 }
 
 func TestPaginationDefaultsAndEnvelope(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\npagination:\n  default_size: 2\n  maximum_size: 4\n")
+	app := newAuthenticatedTestApp(t, "version: 2\npagination:\n  default_size: 2\n  maximum_size: 4\n")
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
 		if request.Page != 1 || request.Size != 2 || request.Offset() != 0 {
 			t.Fatalf("page request = %+v", request)
@@ -183,7 +183,7 @@ func TestPaginationDefaultsAndEnvelope(t *testing.T) {
 }
 
 func TestPaginationRejectsExcessivePageSize(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\npagination:\n  maximum_size: 30\n")
+	app := newAuthenticatedTestApp(t, "version: 2\npagination:\n  maximum_size: 30\n")
 	called := false
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
 		called = true
@@ -202,7 +202,7 @@ func TestPaginationRejectsExcessivePageSize(t *testing.T) {
 }
 
 func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(List("/widgets", func(_ Context, request PageRequest) (Page[string], error) {
 		return NewPage([]string{}, 0, request)
 	})); err != nil {
@@ -226,7 +226,7 @@ func TestPaginationRejectsMalformedAndDuplicateParameters(t *testing.T) {
 }
 
 func TestRequiredPaginationRejectsCollectionGet(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	err := app.Register(Get("/widgets", func(Context) ([]string, error) {
 		return []string{"one"}, nil
 	}))
@@ -236,7 +236,7 @@ func TestRequiredPaginationRejectsCollectionGet(t *testing.T) {
 }
 
 func TestRequiredPaginationRejectsDynamicCollection(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/widgets", func(Context) (any, error) {
 		return []string{"one"}, nil
 	})); err != nil {
@@ -250,7 +250,7 @@ func TestRequiredPaginationRejectsDynamicCollection(t *testing.T) {
 }
 
 func TestDisabledPaginationAllowsCollectionGet(t *testing.T) {
-	content := "version: 1\nauthentication:\n  mode: disabled\npagination:\n  mode: disabled\n"
+	content := "version: 2\nauthentication:\n  mode: disabled\nauthorization:\n  mode: disabled\npagination:\n  mode: disabled\n"
 	app, err := New(writeTestConfig(t, content))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -271,7 +271,7 @@ func TestPostStrictlyDecodesJSON(t *testing.T) {
 	type input struct {
 		Name string `json:"name"`
 	}
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Post("/widgets", func(_ Context, input input) (string, error) {
 		return input.Name, nil
 	})); err != nil {
@@ -285,7 +285,7 @@ func TestPostStrictlyDecodesJSON(t *testing.T) {
 }
 
 func TestHandlerHTTPErrorIsExposed(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/missing", func(Context) (string, error) {
 		return "", NewHTTPError(http.StatusNotFound, "not_found", "The resource does not exist.")
 	})); err != nil {
@@ -299,7 +299,7 @@ func TestHandlerHTTPErrorIsExposed(t *testing.T) {
 }
 
 func TestResponseEncodingFailureDoesNotSendSuccess(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/broken", func(Context) (struct{ Value any }, error) {
 		return struct{ Value any }{Value: make(chan int)}, nil
 	})); err != nil {
@@ -313,7 +313,7 @@ func TestResponseEncodingFailureDoesNotSendSuccess(t *testing.T) {
 }
 
 func TestHandlerPanicIsContained(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	if err := app.Register(Get("/panic", func(Context) (string, error) {
 		panic("boom")
 	})); err != nil {
@@ -327,7 +327,7 @@ func TestHandlerPanicIsContained(t *testing.T) {
 }
 
 func TestRegisterRejectsNilHandlerAndDuplicateRoute(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	var handler func(Context) (string, error)
 	if err := app.Register(Get("/nil", handler)); err == nil || !strings.Contains(err.Error(), "must not be nil") {
 		t.Fatalf("Register(nil handler) error = %v", err)
@@ -343,7 +343,7 @@ func TestRegisterRejectsNilHandlerAndDuplicateRoute(t *testing.T) {
 }
 
 func TestPostRejectsOversizedBody(t *testing.T) {
-	content := "version: 1\nserver:\n  max_body_bytes: 8\n"
+	content := "version: 2\nserver:\n  max_body_bytes: 8\n"
 	app := newAuthenticatedTestApp(t, content)
 	if err := app.Register(Post("/widgets", func(_ Context, input map[string]string) (string, error) {
 		return input["name"], nil
@@ -358,7 +358,7 @@ func TestPostRejectsOversizedBody(t *testing.T) {
 }
 
 func TestPostRejectsOversizedTrailingData(t *testing.T) {
-	content := "version: 1\nserver:\n  max_body_bytes: 3\n"
+	content := "version: 2\nserver:\n  max_body_bytes: 3\n"
 	app := newAuthenticatedTestApp(t, content)
 	if err := app.Register(Post("/widgets", func(_ Context, input map[string]string) (string, error) {
 		return input["name"], nil
@@ -373,7 +373,7 @@ func TestPostRejectsOversizedTrailingData(t *testing.T) {
 }
 
 func TestRunRejectsNilContextBeforeStarting(t *testing.T) {
-	app := newAuthenticatedTestApp(t, "version: 1\n")
+	app := newAuthenticatedTestApp(t, "version: 2\n")
 	//lint:ignore SA1012 Verify the public API rejects an invalid context safely.
 	if err := app.Run(nil); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("Run(nil) error = %v", err)
@@ -387,6 +387,7 @@ func TestRunRejectsNilContextBeforeStarting(t *testing.T) {
 
 func newAuthenticatedTestApp(t *testing.T, configuration string) *App {
 	t.Helper()
+	configuration += "authorization:\n  mode: disabled\n"
 	authenticator := AuthenticatorFunc(func(request *http.Request) (Principal, error) {
 		if request.Header.Get("Authorization") != "Bearer valid" {
 			return Principal{}, ErrUnauthenticated

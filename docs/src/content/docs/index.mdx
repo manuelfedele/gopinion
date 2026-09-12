@@ -6,7 +6,7 @@ hero:
   tagline: GOpinion is the fail-closed framework for Go web applications.
   image:
     file: ../../assets/policy-stack.svg
-    alt: Authentication, pagination, and strict contracts enforced as one policy stack.
+    alt: Authentication, authorization, pagination, and strict contracts enforced as one policy stack.
   actions:
     - text: Build your first app
       link: /gopinion/getting-started/first-app/
@@ -26,6 +26,7 @@ not offer local escape hatches.
 
 <div class="policy-grid">
   <div><strong>Authentication first</strong>Every request is authenticated before route matching when policy is required.</div>
+  <div><strong>Authorization required</strong>Every application handler is preceded by typed preparation and an Allow decision.</div>
   <div><strong>Bounded collections</strong>List handlers receive validated coordinates and must return a typed page.</div>
   <div><strong>Strict inputs</strong>Unknown struct fields, oversized bodies, and ambiguous JSON payloads are rejected.</div>
 </div>
@@ -33,9 +34,12 @@ not offer local escape hatches.
 ## Start with constraints
 
 ```yaml title="gopinion.yaml"
-version: 1
+version: 2
 
 authentication:
+  mode: required
+
+authorization:
   mode: required
 
 pagination:
@@ -44,9 +48,9 @@ pagination:
   maximum_size: 100
 ```
 
-Those policies are secure by default. With authentication set to `required`,
-there is no `Public()`, `SkipAuth()`, or per-route override. With pagination
-set to `required`, a singular route cannot return a top-level collection.
+Those policies are secure by default. Required authentication has no per-route
+override. Required authorization rejects routes without typed preparation. With
+pagination required, a singular route cannot return a top-level collection.
 
 ## A small public API
 
@@ -54,17 +58,18 @@ set to `required`, a singular route cannot return a top-level collection.
 app, err := gopinion.New(
     "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
+    gopinion.WithAuthorizer(authorizer),
 )
 if err != nil {
     return err
 }
 
-err = app.Register(gopinion.Get("/users/{id}", getUser))
+err = app.Register(gopinion.AuthorizedGet("/users/{id}", prepareGetUser, getUser))
 if err != nil {
     return err
 }
 
-err = app.Register(gopinion.List("/users", listUsers))
+err = app.Register(gopinion.AuthorizedList("/users", prepareListUsers, listUsers))
 if err != nil {
     return err
 }
@@ -91,11 +96,12 @@ return app.Run(ctx)
 
 - Configuration loading and validation
 - Authentication placement and principal propagation
+- Authorization dependency and decision enforcement
 - Route registration and method dispatch
 - Request body limits and strict JSON decoding
 - Pagination parsing, limits, and response metadata
 - JSON success and error envelopes
 - Server timeouts, panic containment, and graceful shutdown
 
-Application code owns identity verification, persistence, domain behavior, and
-authorization decisions that depend on the requested resource.
+Application code owns identity verification, authorization policy, trusted
+resource preparation, persistence, and domain behavior.

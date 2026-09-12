@@ -12,6 +12,9 @@ GOpinion guarantees its policies across the HTTP surface owned by `App.Run`.
 - Every request is authenticated before routing when policy is required.
 - No registered route can opt out of global authentication.
 - Missing authenticators prevent startup.
+- Missing authorizers prevent startup when authorization is required.
+- Required authorization rejects application routes without typed preparation.
+- Prepared values reach handlers only after an `Allow` decision.
 - Singular top-level collections are rejected when pagination is required.
 - List handlers receive bounded pagination and return validated pages.
 - POST request bodies are bounded and strictly decoded.
@@ -19,9 +22,10 @@ GOpinion guarantees its policies across the HTTP surface owned by `App.Run`.
 - Network timeouts and graceful shutdown are always configured.
 - Internal errors and panics use client-safe responses.
 
-GOpinion does not generate credentials, validate JWTs, provide authorization,
-or terminate TLS. These remain responsibilities of the injected authenticator,
-domain handlers, and deployment platform.
+GOpinion does not generate credentials, validate JWTs, implement authorization
+policy, or terminate TLS. These remain responsibilities of injected
+authenticators and authorizers, domain preparation functions, and the deployment
+platform.
 
 ## Enforced by Go's type system
 
@@ -37,10 +41,20 @@ before serialization and turns that policy violation into a generic `500`.
 
 ```go
 // Registers because the static type is any, but fails safely at response time.
-gopinion.Get("/invalid", func(gopinion.Context) (any, error) {
-    return []string{"unbounded"}, nil
-})
+gopinion.AuthorizedGet(
+    "/invalid",
+    prepareInvalid,
+    func(gopinion.Context, InvalidScope) (any, error) {
+        return []string{"unbounded"}, nil
+    },
+)
 ```
+
+Authorization enforcement proves that each protected handler was preceded by a
+valid plan and an `Allow` decision. It cannot prove that an application selected
+the correct action, resource, or trusted attributes when constructing the plan.
+Generated `OPTIONS` and `405` responses expose registered method metadata to an
+authenticated caller without invoking domain authorization.
 
 ## Outside the framework boundary
 

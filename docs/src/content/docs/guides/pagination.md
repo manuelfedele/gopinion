@@ -37,9 +37,11 @@ gopinion.PageRequest{Page: 3, Size: 20}
 func listOrders(
     ctx gopinion.Context,
     request gopinion.PageRequest,
+    scope OrderScope,
 ) (gopinion.Page[Order], error) {
-    items, total, err := orderRepository.List(
+    items, total, err := orderRepository.ListAuthorized(
         ctx.Request().Context(),
+        scope,
         request.Offset(),
         request.Size,
     )
@@ -53,13 +55,14 @@ func listOrders(
 A SQL implementation can apply both values directly:
 
 ```go
-func (r *OrderRepository) List(ctx context.Context, offset, limit int) ([]Order, int64, error) {
+func (r *OrderRepository) ListAuthorized(ctx context.Context, scope OrderScope, offset, limit int) ([]Order, int64, error) {
     rows, err := r.db.QueryContext(ctx, `
         SELECT id, customer_id, status
         FROM orders
+        WHERE customer_id = ?
         ORDER BY id
         LIMIT ? OFFSET ?
-    `, limit, offset)
+    `, scope.CustomerID, limit, offset)
     if err != nil {
         return nil, 0, err
     }
@@ -71,7 +74,11 @@ func (r *OrderRepository) List(ctx context.Context, offset, limit int) ([]Order,
     }
 
     var total int64
-    err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM orders`).Scan(&total)
+    err = r.db.QueryRowContext(
+        ctx,
+        `SELECT COUNT(*) FROM orders WHERE customer_id = ?`,
+        scope.CustomerID,
+    ).Scan(&total)
     return items, total, err
 }
 ```
@@ -128,9 +135,13 @@ An empty page still serializes `data` as an empty array, never `null`.
 This fails registration while pagination is required:
 
 ```go
-gopinion.Get("/orders", func(ctx gopinion.Context) ([]Order, error) {
-    return orders.All(ctx.Request().Context())
-})
+gopinion.AuthorizedGet(
+    "/orders",
+    prepareOrderList,
+    func(ctx gopinion.Context, scope OrderScope) ([]Order, error) {
+        return orders.AllAuthorized(ctx.Request().Context(), scope)
+    },
+)
 ```
 
 Top-level slices, arrays, maps, and `Page[T]` values must not be returned from
@@ -145,4 +156,5 @@ pagination:
 ```
 
 This globally allows singular routes to return top-level collections. Typed
-`List` routes remain available if some collections should still be paginated.
+`AuthorizedList` routes remain available if some collections should still be
+paginated.

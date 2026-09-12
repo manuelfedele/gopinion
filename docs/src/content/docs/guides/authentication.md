@@ -49,6 +49,7 @@ Register it at application construction:
 app, err := gopinion.New(
     "gopinion.yaml",
     gopinion.WithAuthenticator(apiKeyAuthenticator{keys: keys}),
+    gopinion.WithAuthorizer(authorizer),
 )
 ```
 
@@ -129,23 +130,11 @@ func currentUser(ctx gopinion.Context) (UserView, error) {
 }
 ```
 
-## Authorization remains explicit
+## Authorization follows authentication
 
-Authentication answers who is calling. Resource authorization still belongs
-in domain code:
-
-```go
-func getInvoice(ctx gopinion.Context) (Invoice, error) {
-    invoice, err := invoices.Find(ctx.Request().Context(), ctx.PathValue("id"))
-    if err != nil {
-        return Invoice{}, err
-    }
-    if invoice.OwnerID != ctx.Principal().Subject {
-        return Invoice{}, gopinion.NewHTTPError(403, "forbidden", "You cannot access this invoice.")
-    }
-    return invoice, nil
-}
-```
+Authentication establishes who is calling. Authorized route preparation then
+loads trusted resource facts, and the configured authorizer decides whether the
+handler may run. See the [authorization guide](../authorization/).
 
 ## Disable authentication
 
@@ -153,6 +142,9 @@ Only the global policy can disable authentication:
 
 ```yaml
 authentication:
+  mode: disabled
+
+authorization:
   mode: disabled
 ```
 

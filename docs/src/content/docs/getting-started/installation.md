@@ -26,7 +26,7 @@ go list -m github.com/manuelfedele/gopinion
 Every application starts from an explicit `gopinion.yaml`:
 
 ```yaml title="gopinion.yaml"
-version: 1
+version: 2
 ```
 
 That minimal file enables fail-closed policy defaults. Omitted fields receive:
@@ -44,6 +44,9 @@ server:
 authentication:
   mode: required
 
+authorization:
+  mode: required
+
 pagination:
   mode: required
   default_size: 25
@@ -51,13 +54,15 @@ pagination:
 ```
 
 :::caution
-Because authentication defaults to `required`, constructing the application
-without an authenticator fails. This is intentional fail-closed behavior.
+Because authentication and authorization default to `required`, constructing
+the application without both dependencies fails. This is intentional
+fail-closed behavior.
 :::
 
-The policy does not generate credentials, validate JWTs, or configure TLS.
-Applications must inject a production authenticator, and deployments must
-terminate TLS before traffic reaches GOpinion's HTTP server.
+The policy does not generate credentials, validate JWTs, provide an
+authorization engine, or configure TLS. Applications must inject production
+implementations, and deployments must terminate TLS before traffic reaches
+GOpinion's HTTP server.
 
 ## Suggested layout
 

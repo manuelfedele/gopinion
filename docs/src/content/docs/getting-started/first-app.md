@@ -10,12 +10,15 @@ This example exposes a single authenticated list endpoint.
 ## 1. Configure policy
 
 ```yaml title="gopinion.yaml"
-version: 1
+version: 2
 
 server:
   address: ":8080"
 
 authentication:
+  mode: required
+
+authorization:
   mode: required
 
 pagination:
@@ -47,7 +50,26 @@ func (a tokenAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, e
 The static token is suitable only for this local example. Production services
 should validate an OIDC token, session, or another trusted credential.
 
-## 3. Define a paginated handler
+## 3. Supply an authorizer
+
+```go
+type taskAuthorizer struct{}
+
+func (taskAuthorizer) Authorize(
+    _ context.Context,
+    principal gopinion.Principal,
+    request gopinion.AuthorizationRequest,
+) (gopinion.AuthorizationDecision, error) {
+    if request.Action == "task:list" && principal.Subject != "" {
+        return gopinion.Allow, nil
+    }
+    return gopinion.Deny, nil
+}
+```
+
+Unknown actions deny by default.
+
+## 4. Define preparation and a paginated handler
 
 ```go
 type task struct {
@@ -61,7 +83,23 @@ var tasks = []task{
     {ID: 3, Title: "Bound collections"},
 }
 
-func listTasks(_ gopinion.Context, request gopinion.PageRequest) (gopinion.Page[task], error) {
+func prepareListTasks(
+    ctx gopinion.Context,
+    _ gopinion.PageRequest,
+) (gopinion.AuthorizationPlan[string], error) {
+    return gopinion.AuthorizationPlan[string]{
+        Request: gopinion.AuthorizationRequest{
+            Action: "task:list",
+            Resource: gopinion.AuthorizationResource{
+                Type: "task_collection",
+                ID: "tasks",
+            },
+        },
+        Value: ctx.Principal().Subject,
+    }, nil
+}
+
+func listTasks(_ gopinion.Context, request gopinion.PageRequest, _ string) (gopinion.Page[task], error) {
     start := request.Offset()
     if start > len(tasks) {
         start = len(tasks)
@@ -74,7 +112,7 @@ func listTasks(_ gopinion.Context, request gopinion.PageRequest) (gopinion.Page[
 `PageRequest` is validated before your handler runs. `NewPage` then verifies
 that the returned item count fits the requested size and declared total.
 
-## 4. Assemble and run
+## 5. Assemble and run
 
 ```go title="main.go"
 package main
@@ -101,12 +139,13 @@ func main() {
     app, err := gopinion.New(
         "gopinion.yaml",
         gopinion.WithAuthenticator(tokenAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
+        gopinion.WithAuthorizer(taskAuthorizer{}),
     )
     if err != nil {
         log.Fatal(err)
     }
 
-    if err := app.Register(gopinion.List("/tasks", listTasks)); err != nil {
+    if err := app.Register(gopinion.AuthorizedList("/tasks", prepareListTasks, listTasks)); err != nil {
         log.Fatal(err)
     }
 
@@ -118,7 +157,7 @@ func main() {
 }
 ```
 
-## 5. Call the endpoint
+## 6. Call the endpoint
 
 ```sh
 APP_TOKEN=local-secret go run .

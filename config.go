@@ -21,6 +21,7 @@ type config struct {
 	Version        *int                 `yaml:"version"`
 	Server         serverConfig         `yaml:"server"`
 	Authentication authenticationConfig `yaml:"authentication"`
+	Authorization  authorizationConfig  `yaml:"authorization"`
 	Pagination     paginationConfig     `yaml:"pagination"`
 }
 
@@ -44,6 +45,10 @@ type authenticationConfig struct {
 	Mode policyMode `yaml:"mode"`
 }
 
+type authorizationConfig struct {
+	Mode policyMode `yaml:"mode"`
+}
+
 type paginationConfig struct {
 	Mode        policyMode `yaml:"mode"`
 	DefaultSize int        `yaml:"default_size"`
@@ -62,6 +67,7 @@ func defaultConfig() config {
 			MaxBodyBytes:      1 << 20,
 		},
 		Authentication: authenticationConfig{Mode: policyRequired},
+		Authorization:  authorizationConfig{Mode: policyRequired},
 		Pagination: paginationConfig{
 			Mode:        policyRequired,
 			DefaultSize: 25,
@@ -102,8 +108,8 @@ func (cfg *config) validate() error {
 	if cfg.Version == nil {
 		return errors.New("version is required")
 	}
-	if *cfg.Version != 1 {
-		return fmt.Errorf("version must be 1, got %d", *cfg.Version)
+	if *cfg.Version != 2 {
+		return fmt.Errorf("version must be 2, got %d", *cfg.Version)
 	}
 	if cfg.Server.Address == "" {
 		return errors.New("server.address must not be empty")
@@ -140,6 +146,12 @@ func (cfg *config) validate() error {
 
 	if err := validatePolicyMode("authentication.mode", cfg.Authentication.Mode); err != nil {
 		return err
+	}
+	if err := validatePolicyMode("authorization.mode", cfg.Authorization.Mode); err != nil {
+		return err
+	}
+	if cfg.Authorization.Mode == policyRequired && cfg.Authentication.Mode == policyDisabled {
+		return errors.New("authorization.mode cannot be required when authentication.mode is disabled")
 	}
 	if err := validatePolicyMode("pagination.mode", cfg.Pagination.Mode); err != nil {
 		return err

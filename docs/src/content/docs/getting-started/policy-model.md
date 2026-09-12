@@ -11,11 +11,12 @@ GOpinion separates **policy** from **dependencies** and **domain behavior**.
 | --- | --- | --- |
 | Global policy | `gopinion.yaml` | Authentication is required |
 | Runtime dependency | Go option | Which authenticator validates identity |
-| Domain behavior | Handler code | Whether this user may update this order |
+| Runtime dependency | Go option | Which authorizer decides access |
+| Domain behavior | Route preparation | Which order and attributes are authorized |
 
 ## One global decision
 
-Authentication and pagination each have two modes:
+Authentication, authorization, and pagination each have two modes:
 
 - `required` enforces the policy across the entire application.
 - `disabled` removes the global requirement.
@@ -30,7 +31,8 @@ authentication:
 
 With this policy, every request passes through the configured authenticator
 before route matching. Unknown routes and method mismatches are authenticated
-too. Endpoint code cannot mark itself public.
+too. Required authorization additionally rejects routes without a typed
+preparation phase. Endpoint code cannot mark itself public.
 
 ## Opt out globally
 
@@ -39,6 +41,9 @@ single policy file:
 
 ```yaml
 authentication:
+  mode: disabled
+
+authorization:
   mode: disabled
 ```
 
@@ -55,28 +60,34 @@ still comes from the file.
 With pagination required, this route is rejected during registration:
 
 ```go
-app.Register(gopinion.Get("/users", func(ctx gopinion.Context) ([]User, error) {
-    return repository.All(ctx.Request().Context())
-}))
+app.Register(gopinion.AuthorizedGet(
+    "/users",
+    prepareUserList,
+    func(ctx gopinion.Context, scope UserScope) ([]User, error) {
+        return repository.AllAuthorized(ctx.Request().Context(), scope)
+    },
+))
 ```
 
 Use a typed list route instead:
 
 ```go
-app.Register(gopinion.List("/users", func(
-    ctx gopinion.Context,
-    request gopinion.PageRequest,
-) (gopinion.Page[User], error) {
-    users, total, err := repository.Page(
-        ctx.Request().Context(),
-        request.Offset(),
-        request.Size,
-    )
-    if err != nil {
-        return gopinion.Page[User]{}, err
-    }
-    return gopinion.NewPage(users, total, request)
-}))
+app.Register(gopinion.AuthorizedList(
+    "/users",
+    prepareUserListPage,
+    func(ctx gopinion.Context, request gopinion.PageRequest, scope UserScope) (gopinion.Page[User], error) {
+        users, total, err := repository.Page(
+            ctx.Request().Context(),
+            scope,
+            request.Offset(),
+            request.Size,
+        )
+        if err != nil {
+            return gopinion.Page[User]{}, err
+        }
+        return gopinion.NewPage(users, total, request)
+    },
+))
 ```
 
 ## Enforcement layers
@@ -85,7 +96,9 @@ app.Register(gopinion.List("/users", func(
 2. Application construction fails when required dependencies are missing.
 3. Route registration rejects incompatible response contracts.
 4. Request handling authenticates before dispatch and validates inputs.
-5. Response handling checks dynamic collection values and fixed envelopes.
+5. Typed preparation constructs trusted authorization facts.
+6. The authorizer must return `Allow` before the handler runs.
+7. Response handling checks dynamic collection values and fixed envelopes.
 
 No host language can prevent a developer from starting a second raw
 `net/http` listener. See the [guarantee boundary](../../reference/guarantee-boundary/)

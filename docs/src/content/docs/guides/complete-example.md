@@ -1,22 +1,25 @@
 ---
 title: Complete Example
-description: Assemble an authenticated todo API with singular and paginated routes.
+description: Run an authenticated, authorized, paginated todo API.
 sidebar:
-  order: 7
+  order: 8
 ---
 
-The repository contains this runnable application in
+The complete runnable application is in
 [`examples/todos`](https://github.com/manuelfedele/gopinion/tree/main/examples/todos).
 
-## Configuration
+## Policy
 
 ```yaml title="examples/todos/gopinion.yaml"
-version: 1
+version: 2
 
 server:
   address: ":8080"
 
 authentication:
+  mode: required
+
+authorization:
   mode: required
 
 pagination:
@@ -25,107 +28,47 @@ pagination:
   maximum_size: 10
 ```
 
-## Application
+## Dependencies
 
-```go title="examples/todos/main.go"
-package main
+The example injects a constant-time local token authenticator and a plain Go
+authorizer:
 
-import (
-    "context"
-    "crypto/sha256"
-    "crypto/subtle"
-    "log"
-    "net/http"
-    "os"
-    "os/signal"
-    "strconv"
-    "strings"
-    "syscall"
-
-    "github.com/manuelfedele/gopinion"
+```go
+app, err := gopinion.New(
+    "gopinion.yaml",
+    gopinion.WithAuthenticator(exampleAuthenticator{
+        tokenHash: sha256.Sum256([]byte(token)),
+    }),
+    gopinion.WithAuthorizer(exampleAuthorizer{}),
 )
-
-type todo struct {
-    ID    int    `json:"id"`
-    Title string `json:"title"`
-}
-
-var todos = []todo{
-    {ID: 1, Title: "Define opinions"},
-    {ID: 2, Title: "Enforce authentication"},
-    {ID: 3, Title: "Enforce pagination"},
-    {ID: 4, Title: "Generate contracts"},
-}
-
-type exampleAuthenticator struct {
-    tokenHash [sha256.Size]byte
-}
-
-func (a exampleAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, error) {
-    presented, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-    presentedHash := sha256.Sum256([]byte(presented))
-    if !found || subtle.ConstantTimeCompare(presentedHash[:], a.tokenHash[:]) != 1 {
-        return gopinion.Principal{}, gopinion.ErrUnauthenticated
-    }
-    return gopinion.Principal{Subject: "example-user"}, nil
-}
-
-func main() {
-    token := os.Getenv("GOPINION_EXAMPLE_TOKEN")
-    if token == "" {
-        log.Fatal("GOPINION_EXAMPLE_TOKEN must be set")
-    }
-
-    app, err := gopinion.New(
-        "gopinion.yaml",
-        gopinion.WithAuthenticator(exampleAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
-    )
-    if err != nil {
-        log.Fatal(err)
-    }
-    if err := app.Register(gopinion.List("/todos", listTodos)); err != nil {
-        log.Fatal(err)
-    }
-    if err := app.Register(gopinion.Get("/todos/{id}", getTodo)); err != nil {
-        log.Fatal(err)
-    }
-
-    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-    defer stop()
-    if err := app.Run(ctx); err != nil {
-        log.Fatal(err)
-    }
-}
-
-func listTodos(_ gopinion.Context, request gopinion.PageRequest) (gopinion.Page[todo], error) {
-    start := request.Offset()
-    if start > len(todos) {
-        start = len(todos)
-    }
-    end := start + request.Size
-    if end > len(todos) {
-        end = len(todos)
-    }
-    return gopinion.NewPage(todos[start:end], int64(len(todos)), request)
-}
-
-func getTodo(ctx gopinion.Context) (todo, error) {
-    id, err := strconv.Atoi(ctx.PathValue("id"))
-    if err != nil || id <= 0 {
-        return todo{}, gopinion.NewHTTPError(400, "invalid_id", "The todo ID must be a positive integer.")
-    }
-    for _, candidate := range todos {
-        if candidate.ID == id {
-            return candidate, nil
-        }
-    }
-    return todo{}, gopinion.NewHTTPError(404, "not_found", "The todo does not exist.")
-}
 ```
 
-## Run it
+The static token and plaintext localhost endpoint are only for local use.
 
-The static token and plaintext localhost endpoint are only for this local demo.
+## Authorized routes
+
+```go
+app.Register(gopinion.AuthorizedList(
+    "/todos",
+    prepareListTodos,
+    listTodos,
+))
+
+app.Register(gopinion.AuthorizedGet(
+    "/todos/{id}",
+    prepareGetTodo,
+    getTodo,
+))
+```
+
+`prepareGetTodo` loads the todo and places its trusted owner in the
+authorization request. The handler receives the todo only after `Allow`.
+
+The list preparation returns an owner scope. `listTodos` filters by that scope
+before applying the page offset and computes totals from visible todos. A
+production repository should apply that scope in its database query.
+
+## Run it
 
 ```sh
 cd examples/todos
@@ -139,11 +82,11 @@ curl -H 'Authorization: Bearer change-me' \
   'http://localhost:8080/todos?page=1&page_size=2'
 ```
 
-Read one item:
+Read an owned item:
 
 ```sh
 curl -H 'Authorization: Bearer change-me' \
-  http://localhost:8080/todos/3
+  http://localhost:8080/todos/1
 ```
 
 Try the enforced boundaries:
@@ -152,11 +95,11 @@ Try the enforced boundaries:
 # Missing identity: 401
 curl -i http://localhost:8080/todos
 
+# Another user's item: 403
+curl -i -H 'Authorization: Bearer change-me' \
+  http://localhost:8080/todos/3
+
 # Page above policy: 400
 curl -i -H 'Authorization: Bearer change-me' \
   'http://localhost:8080/todos?page_size=50'
-
-# Wrong method: 405 with Allow header
-curl -i -X POST -H 'Authorization: Bearer change-me' \
-  http://localhost:8080/todos/3
 ```
