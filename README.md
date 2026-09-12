@@ -3,9 +3,9 @@
 [![CI](https://github.com/manuelfedele/gopinion/actions/workflows/ci.yml/badge.svg)](https://github.com/manuelfedele/gopinion/actions/workflows/ci.yml)
 [![Documentation](https://github.com/manuelfedele/gopinion/actions/workflows/docs.yml/badge.svg)](https://github.com/manuelfedele/gopinion/actions/workflows/docs.yml)
 
-GOpinion is the fail-closed Go framework for JSON HTTP applications. Secure and
-bounded behavior is the default. Applications opt out globally in one strict
-configuration file, not endpoint by endpoint.
+GOpinion is a fail-closed Go framework for JSON HTTP applications. Authentication
+and bounded behavior are required by default. Applications opt out globally in
+one strict configuration file, not endpoint by endpoint.
 
 > GOpinion is experimental. Its API is not yet stable.
 
@@ -55,6 +55,10 @@ identity-provider clients are runtime dependencies, not application policy.
 When authentication is required, startup fails unless an authenticator is
 supplied.
 
+GOpinion does not generate credentials or implement JWT validation. Production
+authenticators must validate credentials with an appropriate identity provider,
+and deployments must terminate TLS before requests reach the HTTP server.
+
 ## Application
 
 ```go
@@ -90,6 +94,8 @@ return app.Run(ctx)
 
 Run the authenticated in-memory example:
 
+The static token and plaintext localhost endpoint are for local use only.
+
 ```sh
 cd examples/todos
 GOPINION_EXAMPLE_TOKEN=change-me go run .
@@ -118,4 +124,4 @@ go vet ./...
 go test -race ./...
 ```
 
-GOpinion requires Go 1.24 or newer and is licensed under Apache-2.0.
+GOpinion requires Go 1.26.6 or newer and is licensed under Apache-2.0.

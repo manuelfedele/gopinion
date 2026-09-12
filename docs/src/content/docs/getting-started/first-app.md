@@ -31,12 +31,13 @@ principal or returns an error.
 
 ```go
 type tokenAuthenticator struct {
-    token string
+    tokenHash [sha256.Size]byte
 }
 
 func (a tokenAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, error) {
     presented, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-    if !ok || subtle.ConstantTimeCompare([]byte(presented), []byte(a.token)) != 1 {
+    presentedHash := sha256.Sum256([]byte(presented))
+    if !ok || subtle.ConstantTimeCompare(presentedHash[:], a.tokenHash[:]) != 1 {
         return gopinion.Principal{}, gopinion.ErrUnauthenticated
     }
     return gopinion.Principal{Subject: "first-user"}, nil
@@ -80,6 +81,7 @@ package main
 
 import (
     "context"
+    "crypto/sha256"
     "crypto/subtle"
     "log"
     "net/http"
@@ -98,7 +100,7 @@ func main() {
 
     app, err := gopinion.New(
         "gopinion.yaml",
-        gopinion.WithAuthenticator(tokenAuthenticator{token: token}),
+        gopinion.WithAuthenticator(tokenAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
     )
     if err != nil {
         log.Fatal(err)

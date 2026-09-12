@@ -32,6 +32,7 @@ package main
 
 import (
     "context"
+    "crypto/sha256"
     "crypto/subtle"
     "log"
     "net/http"
@@ -57,12 +58,13 @@ var todos = []todo{
 }
 
 type exampleAuthenticator struct {
-    token string
+    tokenHash [sha256.Size]byte
 }
 
 func (a exampleAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, error) {
     presented, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-    if !found || subtle.ConstantTimeCompare([]byte(presented), []byte(a.token)) != 1 {
+    presentedHash := sha256.Sum256([]byte(presented))
+    if !found || subtle.ConstantTimeCompare(presentedHash[:], a.tokenHash[:]) != 1 {
         return gopinion.Principal{}, gopinion.ErrUnauthenticated
     }
     return gopinion.Principal{Subject: "example-user"}, nil
@@ -76,7 +78,7 @@ func main() {
 
     app, err := gopinion.New(
         "gopinion.yaml",
-        gopinion.WithAuthenticator(exampleAuthenticator{token: token}),
+        gopinion.WithAuthenticator(exampleAuthenticator{tokenHash: sha256.Sum256([]byte(token))}),
     )
     if err != nil {
         log.Fatal(err)
@@ -100,7 +102,10 @@ func listTodos(_ gopinion.Context, request gopinion.PageRequest) (gopinion.Page[
     if start > len(todos) {
         start = len(todos)
     }
-    end := min(start+request.Size, len(todos))
+    end := start + request.Size
+    if end > len(todos) {
+        end = len(todos)
+    }
     return gopinion.NewPage(todos[start:end], int64(len(todos)), request)
 }
 
@@ -119,6 +124,8 @@ func getTodo(ctx gopinion.Context) (todo, error) {
 ```
 
 ## Run it
+
+The static token and plaintext localhost endpoint are only for this local demo.
 
 ```sh
 cd examples/todos

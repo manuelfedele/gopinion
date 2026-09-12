@@ -33,6 +33,7 @@ func TestNewPageRejectsInvalidState(t *testing.T) {
 		{name: "negative total", total: -1, request: PageRequest{Page: 1, Size: 10}},
 		{name: "too many page items", items: []string{"one", "two"}, total: 2, request: PageRequest{Page: 1, Size: 1}},
 		{name: "more items than total", items: []string{"one"}, total: 0, request: PageRequest{Page: 1, Size: 10}},
+		{name: "items beyond total", items: []string{"one"}, total: 3, request: PageRequest{Page: 2, Size: 10}},
 		{name: "overflowing offset", total: 0, request: PageRequest{Page: math.MaxInt, Size: 2}},
 	}
 

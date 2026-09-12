@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-GOpinion requires Go 1.24 or newer.
+GOpinion requires Go 1.26.6 or newer.
 
 ## Add the module
 
@@ -29,7 +29,7 @@ Every application starts from an explicit `gopinion.yaml`:
 version: 1
 ```
 
-That minimal file is already secure. Omitted fields receive these defaults:
+That minimal file enables fail-closed policy defaults. Omitted fields receive:
 
 ```yaml
 server:
@@ -54,6 +54,10 @@ pagination:
 Because authentication defaults to `required`, constructing the application
 without an authenticator fails. This is intentional fail-closed behavior.
 :::
+
+The policy does not generate credentials, validate JWTs, or configure TLS.
+Applications must inject a production authenticator, and deployments must
+terminate TLS before traffic reaches GOpinion's HTTP server.
 
 ## Suggested layout
 

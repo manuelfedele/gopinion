@@ -25,6 +25,9 @@ type apiKeyAuthenticator struct {
 
 func (a apiKeyAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, error) {
     key := r.Header.Get("X-API-Key")
+    if key == "" {
+        return gopinion.Principal{}, gopinion.ErrUnauthenticated
+    }
     subject, found := a.keys[key]
     if !found {
         return gopinion.Principal{}, gopinion.ErrUnauthenticated
@@ -33,6 +36,10 @@ func (a apiKeyAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, 
         Subject: subject,
         Claims: map[string]any{"credential": "api-key"},
     }, nil
+}
+
+func (apiKeyAuthenticator) AuthenticationChallenge() string {
+    return `ApiKey realm="api"`
 }
 ```
 
@@ -80,7 +87,10 @@ func (a oidcAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, er
 
     token, err := a.verifier.Verify(r.Context(), raw)
     if err != nil {
-        return gopinion.Principal{}, gopinion.ErrUnauthenticated
+        if isInvalidToken(err) {
+            return gopinion.Principal{}, gopinion.ErrUnauthenticated
+        }
+        return gopinion.Principal{}, fmt.Errorf("verify OIDC token: %w", err)
     }
     return gopinion.Principal{
         Subject: token.Subject,
@@ -91,6 +101,15 @@ func (a oidcAuthenticator) Authenticate(r *http.Request) (gopinion.Principal, er
 
 The verifier should validate signature, issuer, audience, expiry, and any
 organization-specific claims.
+
+GOpinion does not generate keys, parse JWTs, or select signing algorithms.
+Those guarantees belong to the injected verifier. Authentication failures
+should return `gopinion.ErrUnauthenticated`; operational verifier failures
+should return their original error and produce a generic `500` response.
+
+Unauthenticated responses use `WWW-Authenticate: Bearer` by default. An
+authenticator can implement `AuthenticationChallenger` to provide another
+challenge, as the API-key example does.
 
 ## Read the principal
 
@@ -103,7 +122,10 @@ func currentUser(ctx gopinion.Context) (UserView, error) {
     if errors.Is(err, sql.ErrNoRows) {
         return UserView{}, gopinion.NewHTTPError(404, "user_not_found", "The user does not exist.")
     }
-    return UserView{ID: user.ID, Name: user.Name}, err
+    if err != nil {
+        return UserView{}, err
+    }
+    return UserView{ID: user.ID, Name: user.Name}, nil
 }
 ```
 

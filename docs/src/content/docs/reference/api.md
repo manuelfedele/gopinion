@@ -66,6 +66,10 @@ type Authenticator interface {
     Authenticate(*http.Request) (Principal, error)
 }
 
+type AuthenticationChallenger interface {
+    AuthenticationChallenge() string
+}
+
 type AuthenticatorFunc func(*http.Request) (Principal, error)
 
 type Principal struct {
@@ -76,7 +80,10 @@ type Principal struct {
 var ErrUnauthenticated error
 ```
 
-A successful principal requires a non-empty `Subject`.
+A successful principal requires a non-empty `Subject`. Return
+`ErrUnauthenticated` for invalid credentials and preserve operational errors so
+the framework can return `500`. Authentication failures use a `Bearer`
+challenge unless the authenticator implements `AuthenticationChallenger`.
 
 ## Pagination
 
