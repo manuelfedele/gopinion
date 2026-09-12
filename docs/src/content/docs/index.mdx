@@ -1,0 +1,101 @@
+---
+title: GOpinion
+description: GOpinion is the fail-closed framework for Go web applications.
+template: splash
+hero:
+  tagline: GOpinion is the fail-closed framework for Go web applications.
+  image:
+    file: ../../assets/policy-stack.svg
+    alt: Authentication, pagination, and strict contracts enforced as one policy stack.
+  actions:
+    - text: Build your first app
+      link: /gopinion/getting-started/first-app/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/manuelfedele/gopinion
+      icon: external
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+GOpinion is deliberately restrictive. Global policy lives in one
+`gopinion.yaml` file, the framework owns the HTTP surface, and endpoint APIs do
+not offer local escape hatches.
+
+<div class="policy-grid">
+  <div><strong>Authentication first</strong>Every request is authenticated before route matching when policy is required.</div>
+  <div><strong>Bounded collections</strong>List handlers receive validated coordinates and must return a typed page.</div>
+  <div><strong>Strict inputs</strong>Unknown struct fields, oversized bodies, and ambiguous JSON payloads are rejected.</div>
+</div>
+
+## Start with constraints
+
+```yaml title="gopinion.yaml"
+version: 1
+
+authentication:
+  mode: required
+
+pagination:
+  mode: required
+  default_size: 25
+  maximum_size: 100
+```
+
+Those policies are secure by default. With authentication set to `required`,
+there is no `Public()`, `SkipAuth()`, or per-route override. With pagination
+set to `required`, a singular route cannot return a top-level collection.
+
+## A small public API
+
+```go
+app, err := gopinion.New(
+    "gopinion.yaml",
+    gopinion.WithAuthenticator(authenticator),
+)
+if err != nil {
+    return err
+}
+
+err = app.Register(gopinion.Get("/users/{id}", getUser))
+if err != nil {
+    return err
+}
+
+err = app.Register(gopinion.List("/users", listUsers))
+if err != nil {
+    return err
+}
+
+return app.Run(ctx)
+```
+
+<CardGrid>
+  <Card title="Learn the policy model" icon="seti:config">
+    Understand what configuration can control and why endpoint code cannot
+    weaken global policy.
+  </Card>
+  <Card title="Follow practical guides" icon="open-book">
+    Build authenticators, typed routes, strict request bodies, paginated
+    queries, and client-safe errors.
+  </Card>
+  <Card title="Check the contracts" icon="approve-check">
+    Use the reference for configuration fields, public Go APIs, and exact JSON
+    response envelopes.
+  </Card>
+</CardGrid>
+
+## What GOpinion owns
+
+- Configuration loading and validation
+- Authentication placement and principal propagation
+- Route registration and method dispatch
+- Request body limits and strict JSON decoding
+- Pagination parsing, limits, and response metadata
+- JSON success and error envelopes
+- Server timeouts, panic containment, and graceful shutdown
+
+Application code owns identity verification, persistence, domain behavior, and
+authorization decisions that depend on the requested resource.

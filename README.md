@@ -1,12 +1,16 @@
 # GOpinion
 
 [![CI](https://github.com/manuelfedele/gopinion/actions/workflows/ci.yml/badge.svg)](https://github.com/manuelfedele/gopinion/actions/workflows/ci.yml)
+[![Documentation](https://github.com/manuelfedele/gopinion/actions/workflows/docs.yml/badge.svg)](https://github.com/manuelfedele/gopinion/actions/workflows/docs.yml)
 
-GOpinion is a policy-first Go framework for JSON HTTP applications. Secure and
+GOpinion is the fail-closed Go framework for JSON HTTP applications. Secure and
 bounded behavior is the default. Applications opt out globally in one strict
 configuration file, not endpoint by endpoint.
 
 > GOpinion is experimental. Its API is not yet stable.
+
+Read the complete documentation at
+[manuelfedele.github.io/gopinion](https://manuelfedele.github.io/gopinion/).
 
 ## Enforced Policies
 
