@@ -53,17 +53,18 @@ For zero items, `data` is `[]` and `total_pages` is `0`.
 
 ## Headers
 
-All framework responses set:
+All framework responses set `X-Content-Type-Options`. Responses with a JSON body
+also set `Content-Type`:
 
 ```text
 Content-Type: application/json
 X-Content-Type-Options: nosniff
 ```
 
-A method mismatch also sets an `Allow` header:
+A method mismatch and generated `OPTIONS` response also set an `Allow` header:
 
 ```text
-Allow: GET, HEAD
+Allow: GET, HEAD, OPTIONS
 ```
 
 An authentication failure sets `WWW-Authenticate`. The default challenge is
@@ -76,9 +77,13 @@ An authentication failure sets `WWW-Authenticate`. The default challenge is
 | `Get` success | 200 |
 | `List` success | 200 |
 | `Post` success | 201 |
+| `Put` success | 200 |
+| `Patch` success | 200 |
+| `Delete` success | 204 |
+| Generated `OPTIONS` | 204 |
 | Invalid input | 400 |
 | Unauthenticated | 401 |
-| Handler-selected forbidden | 403 |
+| Authorization denied | 403 |
 | Unknown route | 404 |
 | Method mismatch | 405 |
 | Oversized body | 413 |

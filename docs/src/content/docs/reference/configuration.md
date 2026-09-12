@@ -11,7 +11,7 @@ present and non-null. Every other field has a default.
 ## Complete file
 
 ```yaml
-version: 1
+version: 2
 
 server:
   address: ":8080"
@@ -25,6 +25,9 @@ server:
 authentication:
   mode: required
 
+authorization:
+  mode: required
+
 pagination:
   mode: required
   default_size: 25
@@ -35,12 +38,17 @@ pagination:
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `version` | Yes | Must be integer `1` |
+| `version` | Yes | Must be integer `2` |
 | `server` | No | HTTP lifecycle and resource bounds |
 | `authentication` | No | Global identity policy |
+| `authorization` | No | Global access-control policy |
 | `pagination` | No | Global collection policy |
 
 Multiple YAML documents are rejected.
+
+Version `2` introduces required authorization. Version `1` files are rejected
+so applications must choose and configure their authorization policy during
+migration.
 
 ## Server
 
@@ -63,6 +71,19 @@ Multiple YAML documents are rejected.
 `required` means an authenticator must be supplied to `gopinion.New` and every
 request must establish a principal before routing.
 
+## Authorization
+
+| Field | Default | Values |
+| --- | --- | --- |
+| `mode` | `required` | `required`, `disabled` |
+
+`required` means an authorizer must be supplied to `gopinion.New` and every
+application route must use an authorized route constructor. Authorization
+cannot be required when authentication is disabled.
+
+Disabling authorization permits ordinary route constructors. An explicitly
+authorized route still runs its authorization phase and requires an authorizer.
+
 ## Pagination
 
 | Field | Default | Validation |
@@ -79,7 +100,7 @@ top-level collections from singular routes.
 Misspelled field:
 
 ```yaml
-version: 1
+version: 2
 authentcation:
   mode: disabled
 ```
@@ -92,7 +113,7 @@ decode configuration: yaml: unmarshal errors:
 Unsupported policy:
 
 ```yaml
-version: 1
+version: 2
 authentication:
   mode: optional
 ```

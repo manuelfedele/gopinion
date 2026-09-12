@@ -21,6 +21,7 @@ var ErrPaginationRequired = errors.New("pagination is required for collection re
 
 type options struct {
 	authenticator Authenticator
+	authorizer    Authorizer
 	logger        *slog.Logger
 }
 
@@ -48,6 +49,17 @@ func WithAuthenticator(authenticator Authenticator) Option {
 	})
 }
 
+// WithAuthorizer supplies the implementation used by authorized routes.
+func WithAuthorizer(authorizer Authorizer) Option {
+	return optionFunc(func(options *options) error {
+		if isNil(authorizer) {
+			return errors.New("authorizer must not be nil")
+		}
+		options.authorizer = authorizer
+		return nil
+	})
+}
+
 // WithLogger supplies the structured logger used for internal failures.
 func WithLogger(logger *slog.Logger) Option {
 	return optionFunc(func(options *options) error {
@@ -63,6 +75,7 @@ func WithLogger(logger *slog.Logger) Option {
 type App struct {
 	config        config
 	authenticator Authenticator
+	authorizer    Authorizer
 	logger        *slog.Logger
 	mux           *http.ServeMux
 
@@ -90,10 +103,14 @@ func New(configPath string, suppliedOptions ...Option) (*App, error) {
 	if cfg.Authentication.Mode == policyRequired && isNil(configuredOptions.authenticator) {
 		return nil, errors.New("authentication is required but no authenticator was supplied")
 	}
+	if cfg.Authorization.Mode == policyRequired && isNil(configuredOptions.authorizer) {
+		return nil, errors.New("authorization is required but no authorizer was supplied")
+	}
 
 	return &App{
 		config:        cfg,
 		authenticator: configuredOptions.authenticator,
+		authorizer:    configuredOptions.authorizer,
 		logger:        configuredOptions.logger,
 		mux:           http.NewServeMux(),
 		routes:        make(map[string]struct{}),
@@ -111,6 +128,15 @@ func (app *App) Register(route Route) error {
 	}
 	if definition.invoke == nil {
 		return errors.New("route handler must not be nil")
+	}
+	if definition.authorizationDeclared && !definition.authorizationValid {
+		return errors.New("route authorization phase must not be nil")
+	}
+	if app.config.Authorization.Mode == policyRequired && !definition.authorizationDeclared {
+		return fmt.Errorf("%s %s: %w", definition.method, definition.pattern, ErrAuthorizationRequired)
+	}
+	if definition.authorizationDeclared && isNil(app.authorizer) {
+		return errors.New("authorized route requires an authorizer")
 	}
 	if app.config.Pagination.Mode == policyRequired && definition.responseKind == responseSingular && definition.responseCollection {
 		return fmt.Errorf("%s %s: %w", definition.method, definition.pattern, ErrPaginationRequired)
@@ -147,14 +173,7 @@ func (app *App) Run(ctx context.Context) error {
 	app.started = true
 	app.mu.Unlock()
 
-	server := &http.Server{
-		Addr:              app.config.Server.Address,
-		Handler:           http.HandlerFunc(app.serveHTTP),
-		ReadHeaderTimeout: app.config.Server.readHeaderTimeout,
-		ReadTimeout:       app.config.Server.readTimeout,
-		WriteTimeout:      app.config.Server.writeTimeout,
-		IdleTimeout:       app.config.Server.idleTimeout,
-	}
+	server := app.newServer()
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.ListenAndServe()
@@ -189,14 +208,33 @@ func (app *App) Run(ctx context.Context) error {
 	}
 }
 
+func (app *App) newServer() *http.Server {
+	return &http.Server{
+		Addr:              app.config.Server.Address,
+		Handler:           http.HandlerFunc(app.serveHTTP),
+		ReadHeaderTimeout: app.config.Server.readHeaderTimeout,
+		ReadTimeout:       app.config.Server.readTimeout,
+		WriteTimeout:      app.config.Server.writeTimeout,
+		IdleTimeout:       app.config.Server.idleTimeout,
+		// Keep OPTIONS * inside the authenticated framework-owned HTTP surface.
+		DisableGeneralOptionsHandler: true,
+	}
+}
+
 func (app *App) registerHandler(pattern string, handler http.Handler) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("invalid or conflicting pattern: %v", recovered)
 		}
 	}()
-	app.mux.Handle(pattern, handler)
+	app.mux.Handle(pattern, registeredRouteHandler{Handler: handler})
 	return nil
+}
+
+// registeredRouteHandler distinguishes application routes from redirect
+// handlers synthesized internally by http.ServeMux.
+type registeredRouteHandler struct {
+	http.Handler
 }
 
 func (app *App) handle(definition routeDefinition) http.Handler {
@@ -204,7 +242,7 @@ func (app *App) handle(definition routeDefinition) http.Handler {
 		state, _ := request.Context().Value(requestStateKey{}).(requestState)
 		requestContext := Context{request: request, principal: state.principal, pagination: app.config.Pagination}
 
-		output, err := definition.invoke(requestContext)
+		output, err := definition.invoke(requestContext, app.authorizer)
 		if err != nil {
 			app.writeHandlerError(writer, request, err)
 			return
@@ -212,6 +250,11 @@ func (app *App) handle(definition routeDefinition) http.Handler {
 		if app.config.Pagination.Mode == policyRequired && definition.responseKind == responseSingular && isCollectionValue(output) {
 			app.logger.Error("handler violated pagination policy", "method", request.Method, "path", request.URL.Path)
 			writeError(writer, http.StatusInternalServerError, "internal_error", "The server could not process the request.")
+			return
+		}
+
+		if definition.responseKind == responseEmpty {
+			writer.WriteHeader(definition.status)
 			return
 		}
 
@@ -231,6 +274,9 @@ func (app *App) handle(definition routeDefinition) http.Handler {
 
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(definition.status)
+		if request.Method == http.MethodHead {
+			return
+		}
 		payload = append(payload, '\n')
 		if _, err := writer.Write(payload); err != nil {
 			app.logger.Error("write response", "method", request.Method, "path", request.URL.Path, "error", err)
@@ -278,6 +324,11 @@ func (app *App) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	allowedMethods := app.allowedMethods(request)
+	if request.Method == http.MethodOptions && len(allowedMethods) > 0 {
+		writer.Header().Set("Allow", strings.Join(allowedMethods, ", "))
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if len(allowedMethods) > 0 {
 		writer.Header().Set("Allow", strings.Join(allowedMethods, ", "))
 		writeError(writer, http.StatusMethodNotAllowed, "method_not_allowed", "The request method is not allowed for this resource.")
@@ -330,7 +381,8 @@ func (app *App) allowedMethods(request *http.Request) []string {
 	for method := range registeredMethods {
 		candidate := request.Clone(request.Context())
 		candidate.Method = method
-		if _, pattern := app.mux.Handler(candidate); pattern == "" {
+		handler, pattern := app.mux.Handler(candidate)
+		if _, registered := handler.(registeredRouteHandler); pattern == "" || !registered {
 			continue
 		}
 		allowed[method] = struct{}{}
@@ -340,6 +392,9 @@ func (app *App) allowedMethods(request *http.Request) []string {
 	}
 
 	methods := make([]string, 0, len(allowed))
+	if len(allowed) > 0 {
+		allowed[http.MethodOptions] = struct{}{}
+	}
 	for method := range allowed {
 		methods = append(methods, method)
 	}
@@ -348,6 +403,10 @@ func (app *App) allowedMethods(request *http.Request) []string {
 }
 
 func (app *App) writeHandlerError(writer http.ResponseWriter, request *http.Request, err error) {
+	if errors.Is(err, ErrForbidden) {
+		writeError(writer, http.StatusForbidden, "forbidden", "The request is not authorized.")
+		return
+	}
 	var httpError *HTTPError
 	if errors.As(err, &httpError) && httpError.Status >= 400 && httpError.Status <= 599 && httpError.Code != "" && httpError.Message != "" {
 		writeError(writer, httpError.Status, httpError.Code, httpError.Message)

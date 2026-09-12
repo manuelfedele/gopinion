@@ -14,15 +14,16 @@ policy chain.
 app, err := gopinion.New(
     "gopinion.yaml",
     gopinion.WithAuthenticator(authenticator),
+    gopinion.WithAuthorizer(authorizer),
 )
 if err != nil {
     return err
 }
 
-if err := app.Register(gopinion.Get("/profile", profile)); err != nil {
+if err := app.Register(gopinion.AuthorizedGet("/profile", prepareProfile, profile)); err != nil {
     return err
 }
-if err := app.Register(gopinion.List("/events", listEvents)); err != nil {
+if err := app.Register(gopinion.AuthorizedList("/events", prepareEventList, listEvents)); err != nil {
     return err
 }
 

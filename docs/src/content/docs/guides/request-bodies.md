@@ -5,7 +5,8 @@ sidebar:
   order: 3
 ---
 
-`Post` strictly decodes exactly one JSON value into its generic input type.
+`Post`, `Put`, and `Patch` strictly decode exactly one JSON value into their
+generic input type before authorization preparation or domain handling.
 
 ```go
 type createOrderInput struct {
@@ -13,17 +14,17 @@ type createOrderInput struct {
     Quantity  int    `json:"quantity"`
 }
 
-func createOrder(ctx gopinion.Context, input createOrderInput) (Order, error) {
+func createOrder(ctx gopinion.Context, input createOrderInput, scope OrderScope) (Order, error) {
     if input.ProductID == "" {
         return Order{}, gopinion.NewHTTPError(400, "product_required", "product_id is required.")
     }
     if input.Quantity <= 0 {
         return Order{}, gopinion.NewHTTPError(400, "invalid_quantity", "quantity must be positive.")
     }
-    return orders.Create(ctx.Request().Context(), input.ProductID, input.Quantity)
+    return orders.Create(ctx.Request().Context(), scope, input.ProductID, input.Quantity)
 }
 
-app.Register(gopinion.Post("/orders", createOrder))
+app.Register(gopinion.AuthorizedPost("/orders", prepareCreateOrder, createOrder))
 ```
 
 ## Unknown struct fields fail
