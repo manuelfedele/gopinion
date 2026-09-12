@@ -2,3 +2,6 @@
 .env
 bin/
 coverage.out
+docs/.astro/
+docs/dist/
+docs/node_modules/
